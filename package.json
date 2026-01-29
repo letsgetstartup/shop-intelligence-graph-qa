@@ -1,28 +1,26 @@
 {
   "name": "falkordb",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "1.1.0",
+  "description": "FalkorDB Natural Language Interface via Vertex AI",
+  "main": "src/server.js",
   "scripts": {
+    "start": "node src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "falkordb",
+    "vertex-ai",
+    "gemini",
+    "graph-database"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@falkordb/langchain-ts": "^0.2.0",
-    "@fastify/cors": "^11.2.0",
-    "@langchain/community": "^1.1.9",
-    "@langchain/core": "^1.1.17",
-    "@langchain/google-genai": "^2.1.13",
-    "@langchain/google-vertexai": "^2.1.13",
-    "@langchain/openai": "^1.2.3",
-    "csv-parse": "^6.1.0",
-    "dotenv": "^17.2.3",
-    "falkordb": "^6.6.0",
-    "fastify": "^5.7.2",
-    "langchain": "^1.2.15",
-    "redis": "^5.10.0"
+    "@fastify/cors": "^9.0.1",
+    "@google-cloud/vertexai": "^1.10.0",
+    "dotenv": "^16.4.5",
+    "falkordb": "^1.0.0",
+    "fastify": "^4.26.1"
   }
 }
