@@ -220,6 +220,12 @@ Instructions:
 5.  **Industrial Infographics**:
     *   If the data supports it (numbers, percentages, status), YOU MUST include the [INFOGRAPHIC] JSON block at the very end.
     *   Format: [INFOGRAPHIC: {"type": "gauge|bar|status|kpi", "value": number, "label": "string", "unit": "%|qty|hrs", "status": "green|amber|red"}]
+6.  **Action Suggestions (Fix the Challenge)**: 
+    *   Find the most critical problem in the data (e.g., high scrap, machine down, late job).
+    *   Provide 2-3 specific "Next Step Actions" to FIX the problem (e.g., "Schedule Repair", "Verify Calibration", "Check Material Quality").
+    *   Format: [ACTIONS: [{"icon": "Wrench|AlertTriangle|ArrowRight|CheckZone|Database|TrendingUp|ShieldAlert|Box|Zap", "label": "Action label", "query": "Clear natural language query to solve the issue"}]]
+    *   Icons: Use Wrench for maintenance, AlertTriangle for quality/scrap, Zap for speed/urgency, Database for history lookup.
+    *   CRITICAL: The block MUST be valid JSON and on a single line.
 
 Response:`;
 
@@ -230,7 +236,12 @@ Response:`;
         ]);
 
         const response = result.response;
-        return response.candidates[0].content.parts[0].text.trim();
+        let text = response.candidates[0].content.parts[0].text.trim();
+
+        // Ensure double quotes for JSON
+        text = text.replace(/'(?=[^"]*")/g, '"');
+
+        return text;
     } catch (error) {
         console.error('Vertex AI Insight Error:', error);
         return formatResults(queryResult); // Fallback to raw formatting
@@ -313,8 +324,46 @@ app.post('/query', async (request, reply) => {
         const result = await graph.query(cypherQuery);
 
         // Generate Natural Language Answer
-        const answer = await generateNaturalLanguageResponse(question, cypherQuery, result);
-        const suggestions = suggestFollowUps(question);
+        let answer = await generateNaturalLanguageResponse(question, cypherQuery, result);
+
+        // Parse Action Suggestions [ACTIONS: [...]]
+        let suggestions = [];
+        const actionsStart = answer.indexOf('[ACTIONS:');
+        if (actionsStart !== -1) {
+            let bracketCount = 0;
+            let jsonStart = actionsStart + '[ACTIONS:'.length;
+            let jsonEnd = jsonStart;
+
+            // Find the matching closing bracket by counting
+            for (let i = jsonStart; i < answer.length; i++) {
+                if (answer[i] === '[') bracketCount++;
+                if (answer[i] === ']') bracketCount--;
+                if (bracketCount === 0 && answer[i] === ']') {
+                    jsonEnd = i;
+                    break;
+                }
+            }
+
+            if (jsonEnd > jsonStart) {
+                try {
+                    const jsonStr = answer.substring(jsonStart, jsonEnd + 1).trim();
+                    suggestions = JSON.parse(jsonStr);
+                    // Remove the entire [ACTIONS: ...] block from answer
+                    answer = answer.substring(0, actionsStart) + answer.substring(jsonEnd + 2);
+                    answer = answer.trim();
+                    console.log("✅ Parsed AI Actions:", suggestions);
+                } catch (e) {
+                    console.error("❌ Failed to parse actions JSON:", e.message);
+                }
+            }
+        }
+
+        // Strip any remaining metadata tags as fallback
+        answer = answer.replace(/\[ACTIONS:\s*[\s\S]*?\]\]/g, '').replace(/\[INFOGRAPHIC:\s*[\s\S]*?\]/g, '').trim();
+
+        if (!suggestions || suggestions.length === 0) {
+            suggestions = suggestFollowUps(question);
+        }
 
         return {
             answer,

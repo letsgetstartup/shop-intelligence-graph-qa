@@ -28,7 +28,8 @@ import {
     AlertCircle,
     ShieldAlert,
     ZapOff,
-    ClipboardCheck
+    ClipboardCheck,
+    Wrench
 } from 'lucide-react';
 
 const MODULE_DATA = {
@@ -282,43 +283,68 @@ const ChatMessage = ({ msg }) => {
                         <div className="bg-white border border-slate-100 text-slate-700 px-6 py-5 rounded-2xl rounded-tl-sm shadow-sm relative overflow-hidden group">
                             <div className="markdown-body text-sm leading-7 whitespace-pre-wrap relative z-10">
                                 {(() => {
+                                    // Strip any leaked metadata tags ([ACTIONS: ...] or [INFOGRAPHIC: ...])
+                                    const cleanText = msg.text.replace(/\[ACTIONS:\s*[\s\S]*?\]/g, '').replace(/\[INFOGRAPHIC:\s*[\s\S]*?\]/g, '').trim();
+
                                     const regex = /\[INFOGRAPHIC:\s*(.*?)\]/g;
                                     const parts = [];
                                     let lastIndex = 0;
                                     let match;
 
-                                    while ((match = regex.exec(msg.text)) !== null) {
-                                        parts.push(msg.text.substring(lastIndex, match.index));
+                                    while ((match = regex.exec(cleanText)) !== null) {
+                                        parts.push(cleanText.substring(lastIndex, match.index));
                                         try {
                                             const data = JSON.parse(match[1]);
                                             parts.push(<InfographicRenderer key={match.index} data={data} />);
                                         } catch (e) {
-                                            parts.push(<span key={match.index} className="text-xs text-red-400 block my-2">Visual Error: Check JSON format</span>);
+                                            parts.push(<span key={match.index} className="text-xs text-red-400 block my-2">Visual Error: {e.message}</span>);
                                         }
                                         lastIndex = regex.lastIndex;
                                     }
-                                    parts.push(msg.text.substring(lastIndex));
+                                    parts.push(cleanText.substring(lastIndex));
 
-                                    if (parts.length > 1) {
+                                    if (parts.length > 1 || cleanText.includes('[INFOGRAPHIC:')) {
                                         return <>{parts}</>;
                                     }
-                                    return msg.text;
+                                    return cleanText;
                                 })()}
                             </div>
                             <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <MoreHorizontal size={14} className="text-slate-300" /> </div>
                         </div>
                         {msg.followUps && msg.followUps.length > 0 && (
-                            <div className="mt-4 flex flex-wrap gap-2 pl-1">
-                                {msg.followUps.map((fu, idx) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => msg.onFollowUp(fu)}
-                                        className="flex items-center gap-2 text-xs font-semibold bg-white hover:bg-teal-50 text-slate-600 hover:text-teal-700 border border-slate-200 hover:border-teal-200 px-4 py-2 rounded-full transition-all shadow-sm group"
-                                    >
-                                        {fu}
-                                        <ChevronRight size={12} className="text-slate-300 group-hover:text-teal-500" /> </button>
-                                ))} </div>
+                            <div className="mt-6 flex flex-wrap gap-3 pl-1">
+                                {msg.followUps.map((action, idx) => {
+                                    const IconComponent = {
+                                        Wrench: () => <Wrench size={12} />,
+                                        AlertTriangle: () => <AlertTriangle size={12} />,
+                                        ArrowRight: () => <ChevronRight size={12} />,
+                                        CheckCircle2: () => <CheckCircle2 size={12} />,
+                                        Database: () => <Database size={12} />,
+                                        TrendingUp: () => <TrendingUp size={12} />,
+                                        ShieldAlert: () => <ShieldAlert size={12} />,
+                                        Box: () => <Box size={12} />,
+                                        Zap: () => <Zap size={12} />,
+                                        Lightbulb: () => <Lightbulb size={12} />
+                                    }[action.icon] || (() => <Zap size={12} />);
+
+                                    const label = typeof action === 'string' ? action : action.label;
+                                    const query = typeof action === 'string' ? action : action.query;
+
+                                    return (
+                                        <button
+                                            key={idx}
+                                            onClick={() => msg.onFollowUp(query)}
+                                            className="flex items-center gap-2.5 text-[11px] font-black bg-white hover:bg-teal-600 text-slate-800 hover:text-white border-2 border-slate-100 hover:border-teal-600 px-5 py-2.5 rounded-xl transition-all shadow-sm hover:shadow-teal-200 active:scale-95 group uppercase tracking-wider"
+                                        >
+                                            <div className="p-1 rounded bg-slate-50 group-hover:bg-teal-500 group-hover:text-white transition-colors">
+                                                <IconComponent />
+                                            </div>
+                                            {label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         )} </>
                     )} </div>
                 )} </div>
