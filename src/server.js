@@ -81,12 +81,25 @@ Graph Schema:
 - Node Labels: ${schema.nodeLabels.join(', ')}
 - Relationship Types: ${schema.relTypes.join(', ')}
 
-Node properties (examples):
-- Customer: customer_id, customer_name
-- Part: part_id, part_name
-- Job: job_id, status, due_date, completion_date
-- Machine: machine_id, machine_name, hourly_cost
-- Employee: employee_id, employee_name
+Node properties:
+- Customer: CustomerID, Name, City, Country, Industry, Terms, CreditLimit
+- Part: PartNum, Description, UOM, Revision, StdMaterial, StdCycleTimeSec, StdCost, SellPrice
+- Job: JobNum, SalesOrder, Revision, JobStatus, Priority, QtyOrdered, QtyCompleted, QtyScrapped, PlannedStart, DueDate, CloseDate
+- Machine: MachineName, WorkCenterID, WorkCenterName, Department, RatePerHour
+- Employee: EmployeeID, Name, Role, Shift, HourlyRate
+- Operation: JobOperKey, OperSeq, OperationDesc, Status
+- Cluster: ClusterID, ClusterStart, ClusterEnd, RunSec, CycleCount
+- StateEvent: State, StartTS, EndTS, Duration, Operator
+
+Relationship Rules:
+- (Customer)-[:PLACED]->(Job)
+- (Job)-[:PRODUCES]->(Part)
+- (Job)-[:HAS_OPERATION]->(Operation)
+- (Operation)-[:USES_MACHINE]->(Machine)
+- (Employee)-[:PERFORMED_BY]->(Operation)
+- (Machine)-[:HAS_CLUSTER]->(Cluster)
+- (Operation)-[:IN_CLUSTER]->(Cluster)
+- (Machine)-[:HAS_STATE]->(StateEvent)
 
 Convert this natural language question to a Cypher query:
 "${question}"
@@ -94,7 +107,7 @@ Convert this natural language question to a Cypher query:
 Rules:
 1. Return ONLY the Cypher query, no explanations
 2. Use LIMIT 10 for safety unless the question asks for counts/aggregates
-3. Return meaningful property names in results
+3. Use correct property names exactly as shown above (e.g., JobNum instead of job_id)
 4. For counts, use "RETURN count(*) as count"
 5. For aggregates, give clear aliases like "total_cost", "avg_hours"
 
@@ -103,7 +116,7 @@ Cypher query:`;
     try {
         const result = await Promise.race([
             model.generateContent(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini Timeout')), 15000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini Generation Timeout (30s)')), 30000))
         ]);
 
         const response = result.response;
@@ -128,7 +141,13 @@ function formatResults(queryResult) {
     // If it's a single count/aggregate (FalkorDB returns data as array of objects)
     if (queryResult.data.length === 1 && Object.keys(queryResult.data[0]).length === 1) {
         const key = Object.keys(queryResult.data[0])[0];
-        const value = queryResult.data[0][key];
+        let value = queryResult.data[0][key];
+
+        // Handle FalkorDB Node/Edge objects
+        if (value && typeof value === 'object') {
+            if (value.properties) value = value.properties;
+            return `Result for ${key}:\n` + Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('\n');
+        }
         return `The answer is: ${value}`;
     }
 
@@ -145,7 +164,14 @@ function formatResults(queryResult) {
     } else {
         text = `Found ${count} results. First few:\n` +
             queryResult.data.slice(0, 3).map(row => {
-                return keys.map(key => `${key}: ${row[key]}`).join(', ');
+                return keys.map(key => {
+                    let val = row[key];
+                    if (val && typeof val === 'object') {
+                        if (val.properties) val = val.properties;
+                        return `${key}: {${Object.entries(val).map(([k, v]) => `${k}:${v}`).join(', ')}}`;
+                    }
+                    return `${key}: ${val}`;
+                }).join(', ');
             }).join('\n');
     }
     return text;
@@ -239,7 +265,9 @@ app.post('/query', async (request, reply) => {
         console.error('Request FAILED:', err);
         return reply.code(500).send({
             error: 'Failed to process question',
-            details: err.message,
+            message: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+            details: `The system encountered an error: ${err.message}. Please check if the database is reachable.`,
             duration: Date.now() - startTime
         });
     }

@@ -5,8 +5,9 @@ const { parse } = require('csv-parse');
 const { FalkorDB } = require('falkordb');
 require('dotenv').config();
 
-const DATA_DIR = path.join(__dirname, '../data/erp');
-const FALKORDB_URL = process.env.FALKORDB_URL || 'falkor://localhost:6379';
+const ERP_DATA_DIR = path.join(__dirname, '../data/erp');
+const MACHINE_DATA_DIR = path.join(__dirname, '../data/machines');
+const FALKORDB_URL = process.env.FALKORDB_URL || 'falkors://localhost:6379';
 const GRAPH_NAME = process.env.GRAPH_NAME || 'shop';
 
 async function main() {
@@ -24,13 +25,14 @@ async function main() {
         await graph.query("CREATE INDEX FOR (m:Machine) ON (m.MachineName)"); // Using MachineName from WorkCenters/Clusters
         await graph.query("CREATE INDEX FOR (e:Employee) ON (e.EmployeeID)");
         await graph.query("CREATE INDEX FOR (cl:Cluster) ON (cl.ClusterID)");
+        await graph.query("CREATE INDEX FOR (se:StateEvent) ON (se.StartTS)"); // Improved search for timeline
     } catch (err) {
         console.log("Index creation note (may already exist):", err.message);
     }
 
     // --- Helpers ---
-    const processFile = async (filename, rowHandler) => {
-        const filePath = path.join(DATA_DIR, filename);
+    const processFile = async (directory, filename, rowHandler) => {
+        const filePath = path.join(directory, filename);
         if (!fs.existsSync(filePath)) {
             console.warn(`File not found: ${filePath}, skipping.`);
             return;
@@ -47,7 +49,7 @@ async function main() {
     };
 
     // 1. Customers
-    await processFile('jb_Customers.csv', async (row, count) => {
+    await processFile(ERP_DATA_DIR, 'jb_Customers.csv', async (row, count) => {
         const params = {
             id: row.CustomerID,
             props: {
@@ -69,7 +71,7 @@ async function main() {
     });
 
     // 2. Parts
-    await processFile('jb_Parts.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_Parts.csv', async (row) => {
         const params = {
             id: row.PartNum,
             props: {
@@ -87,8 +89,7 @@ async function main() {
     });
 
     // 3. Machines (from WorkCenters)
-    // We assume WorkCenter -> Machine. 
-    await processFile('jb_WorkCenters.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_WorkCenters.csv', async (row) => {
         // We will treat 'Machine' column as the unique identifier for the machine node if present, 
         // OR use WorkCenterID as the Machine identifier if Machine column is empty/same.
         // Based on headers: WorkCenterID,WorkCenterName,Machine,Department,MachineRatePerHour
@@ -107,7 +108,7 @@ async function main() {
     });
 
     // 4. Employees
-    await processFile('jb_Employees.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_Employees.csv', async (row) => {
         const params = {
             id: row.EmployeeID,
             props: {
@@ -122,7 +123,7 @@ async function main() {
     });
 
     // 5. Jobs (Nodes + Relationships to Customer & Part)
-    await processFile('jb_Jobs.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_Jobs.csv', async (row) => {
         const dueTs = row.DueDate ? new Date(row.DueDate).getTime() : null;
         const closeTs = row.CloseDate ? new Date(row.CloseDate).getTime() : null;
 
@@ -164,7 +165,7 @@ async function main() {
     });
 
     // 6. Cluster Events (Nodes + Rel to Machine)
-    await processFile('jb_SMKO_ClusterBridge.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_SMKO_ClusterBridge.csv', async (row) => {
         const startTs = new Date(row.ClusterStart).getTime();
         const endTs = new Date(row.ClusterEnd).getTime();
 
@@ -193,7 +194,7 @@ async function main() {
     });
 
     // 7. Operations (Nodes + Rel to Job, Machine, Cluster)
-    await processFile('jb_JobOperations.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_JobOperations.csv', async (row) => {
         const jobOperKey = `${row.JobNum}::${row.OperSeq}`;
         const params = {
             opKey: jobOperKey,
@@ -255,7 +256,7 @@ async function main() {
     });
 
     // 8. Labor Details (Employee -> Operation)
-    await processFile('jb_LaborDetails.csv', async (row) => {
+    await processFile(ERP_DATA_DIR, 'jb_LaborDetails.csv', async (row) => {
         const jobOperKey = `${row.JobNum}::${row.OperSeq}`;
         const params = {
             empId: row.EmployeeID,
@@ -274,6 +275,36 @@ async function main() {
         `
         await graph.query(query, { params });
     });
+
+    // 9. Machine Timeline
+    const machineFiles = fs.readdirSync(MACHINE_DATA_DIR).filter(f => f.endsWith('.csv'));
+    for (const file of machineFiles) {
+        await processFile(MACHINE_DATA_DIR, file, async (row) => {
+            if (!row.Machine || !row.Start) return;
+
+            const startTs = parseInt(row.Start);
+            const endTs = parseInt(row.End);
+            const duration = endTs - startTs;
+
+            const params = {
+                machineName: row.Machine,
+                props: {
+                    State: row.State,
+                    StartTS: startTs,
+                    EndTS: endTs,
+                    Duration: duration,
+                    Operator: row.Operator || 'Unknown'
+                }
+            };
+
+            const query = `
+                MATCH (m:Machine {MachineName: $machineName})
+                CREATE (se:StateEvent $props)
+                MERGE (m)-[:HAS_STATE]->(se)
+            `;
+            await graph.query(query, { params });
+        });
+    }
 
     console.log("Ingestion complete.");
     db.close();

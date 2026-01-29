@@ -72,7 +72,7 @@ async function getGraphSchema(graph) {
 async function generateCypherQuery(question, schema) {
     const vertexAI = getVertexAI();
     const model = vertexAI.getGenerativeModel({
-        model: 'gemini-2.0-flash-exp'
+        model: 'gemini-2.5-pro'
     });
 
     const prompt = `You are a Cypher query generator for a FalkorDB graph database containing manufacturing shop floor data.
@@ -81,12 +81,37 @@ Graph Schema:
 - Node Labels: ${schema.nodeLabels.join(', ')}
 - Relationship Types: ${schema.relTypes.join(', ')}
 
-Node properties (examples):
-- Customer: customer_id, customer_name
-- Part: part_id, part_name
-- Job: job_id, status, due_date, completion_date
-- Machine: machine_id, machine_name, hourly_cost
-- Employee: employee_id, employee_name
+Node properties:
+- Customer: CustomerID, Name, City, Country, Industry, Terms, CreditLimit
+- Part: PartNum, Description, UOM, Revision, StdMaterial, StdCycleTimeSec, StdCost, SellPrice
+- Job: JobNum, SalesOrder, Revision, JobStatus, Priority, QtyOrdered, QtyCompleted, QtyScrapped, PlannedStart, DueDate, CloseDate
+- Machine: MachineName, WorkCenterID, WorkCenterName, Department, RatePerHour
+- Employee: EmployeeID, Name, Role, Shift, HourlyRate
+- Operation: JobOperKey, OperSeq, OperationDesc, Status
+- Cluster: ClusterID, ClusterStart, ClusterEnd, RunSec, CycleCount
+- StateEvent: State, StartTS, EndTS, Duration, Operator
+
+Relationship Rules:
+- (Customer)-[:PLACED]->(Job)
+- (Job)-[:PRODUCES]->(Part)
+- (Job)-[:HAS_OPERATION]->(Operation)
+- (Operation)-[:USES_MACHINE]->(Machine)
+- (Employee)-[:PERFORMED_BY]->(Operation)
+- (Machine)-[:HAS_CLUSTER]->(Cluster)
+- (Operation)-[:IN_CLUSTER]->(Cluster)
+- (Machine)-[:HAS_STATE]->(StateEvent)
+
+Industrial Data Grounding:
+- Work Centers / Machine Names: "102 HAAS VF4", "103 HAAS VF4", "104 DOOSAN DNM6700", "22 DMU NLX 2500", "41 DMU NLX2500"
+- Departments: "Turning", "Milling", "Support", "Quality"
+- Job Examples: "J26-00001", "J26-00010"
+- Performance Rule: OEE is not a direct property. To calculate availability/utilization, look at StateEvent nodes where State = 'RUNNING' or use Cluster metrics.
+
+Industrial Infographic Mode:
+If the question is about machine performance, scrap, job status, or efficiency, include a visual JSON block at the END of your response (after the text answer) using this format:
+[INFOGRAPHIC: {"type": "gauge|bar|status|kpi", "value": number, "label": "string", "unit": "%|qty|hrs", "status": "green|amber|red"}]
+
+Example: "The machine 102 HAAS VF4 is currently at 85% utilization. [INFOGRAPHIC: {"type": "gauge", "value": 85, "label": "Utilization", "unit": "%", "status": "green"}]"
 
 Convert this natural language question to a Cypher query:
 "${question}"
@@ -94,16 +119,17 @@ Convert this natural language question to a Cypher query:
 Rules:
 1. Return ONLY the Cypher query, no explanations
 2. Use LIMIT 10 for safety unless the question asks for counts/aggregates
-3. Return meaningful property names in results
+3. Use correct property names exactly as shown above (e.g., JobNum instead of job_id)
 4. For counts, use "RETURN count(*) as count"
 5. For aggregates, give clear aliases like "total_cost", "avg_hours"
+6. DO NOT hallucinate entity names. Use the exact "MachineName" or "Department" provided in the Grounding list if mentioned.
 
 Cypher query:`;
 
     try {
         const result = await Promise.race([
             model.generateContent(prompt),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini Timeout')), 15000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini Generation Timeout (60s)')), 60000))
         ]);
 
         const response = result.response;
@@ -128,7 +154,13 @@ function formatResults(queryResult) {
     // If it's a single count/aggregate (FalkorDB returns data as array of objects)
     if (queryResult.data.length === 1 && Object.keys(queryResult.data[0]).length === 1) {
         const key = Object.keys(queryResult.data[0])[0];
-        const value = queryResult.data[0][key];
+        let value = queryResult.data[0][key];
+
+        // Handle FalkorDB Node/Edge objects
+        if (value && typeof value === 'object') {
+            if (value.properties) value = value.properties;
+            return `Result for ${key}:\n` + Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('\n');
+        }
         return `The answer is: ${value}`;
     }
 
@@ -145,14 +177,73 @@ function formatResults(queryResult) {
     } else {
         text = `Found ${count} results. First few:\n` +
             queryResult.data.slice(0, 3).map(row => {
-                return keys.map(key => `${key}: ${row[key]}`).join(', ');
+                return keys.map(key => {
+                    let val = row[key];
+                    if (val && typeof val === 'object') {
+                        if (val.properties) val = val.properties;
+                        return `${key}: {${Object.entries(val).map(([k, v]) => `${k}:${v}`).join(', ')}}`;
+                    }
+                    return `${key}: ${val}`;
+                }).join(', ');
             }).join('\n');
     }
     return text;
 }
 
+// Generate Natural Language Response using Gemini
+async function generateNaturalLanguageResponse(question, cypherQuery, queryResult) {
+    const vertexAI = getVertexAI();
+    const model = vertexAI.getGenerativeModel({
+        model: 'gemini-2.5-pro'
+    });
+
+    const dataString = JSON.stringify(queryResult.data).slice(0, 10000); // Limit data size
+
+    const prompt = `You are an expert Manufacturing Shop Floor Assistant named "Wizechat".
+Your goal is to explain production data clearly to factory workers and managers.
+
+User Question: "${question}"
+Cypher Query Executed: "${cypherQuery}"
+Raw Data Results: ${dataString}
+
+Instructions:
+1.  **Analyze the Data**: Look at the raw results. If empty, say so clearly.
+2.  ** Actionable Insights**: Don't just list numbers. Tell the user *what to do* or *what it means*.
+    *   Example: Instead of "Scrap is 5%", say "⚠️ Scrap rate is 5%. Check material quality on Op 40."
+3.  **Use Icons**: specific icons for visual scanning:
+    *   ⚠️ for alerts/warnings
+    *   ✅ for good status/success
+    *   📉 / 📈 for trends
+    *   🏭 for machine/factory
+    *   💰 for cost/money
+    *   🛑 for stops/errors
+4.  **Format**:
+    *   Use Markdown bolding (**text**) for emphasis.
+    *   Use bullet points for lists.
+    *   Keep it concise (under 4 sentences usually, unless it's a complex report).
+5.  **Industrial Infographics**:
+    *   If the data supports it (numbers, percentages, status), YOU MUST include the [INFOGRAPHIC] JSON block at the very end.
+    *   Format: [INFOGRAPHIC: {"type": "gauge|bar|status|kpi", "value": number, "label": "string", "unit": "%|qty|hrs", "status": "green|amber|red"}]
+
+Response:`;
+
+    try {
+        const result = await Promise.race([
+            model.generateContent(prompt),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini Insight Generation Timeout (30s)')), 30000))
+        ]);
+
+        const response = result.response;
+        return response.candidates[0].content.parts[0].text.trim();
+    } catch (error) {
+        console.error('Vertex AI Insight Error:', error);
+        return formatResults(queryResult); // Fallback to raw formatting
+    }
+}
+
 // Suggest follow-up questions
 function suggestFollowUps(question) {
+    -
     const qLower = question.toLowerCase();
     const suggestions = [];
 
@@ -225,8 +316,8 @@ app.post('/query', async (request, reply) => {
         // Execute query
         const result = await graph.query(cypherQuery);
 
-        // Format answer
-        const answer = formatResults(result);
+        // Generate Natural Language Answer
+        const answer = await generateNaturalLanguageResponse(question, cypherQuery, result);
         const suggestions = suggestFollowUps(question);
 
         return {
@@ -239,7 +330,9 @@ app.post('/query', async (request, reply) => {
         console.error('Request FAILED:', err);
         return reply.code(500).send({
             error: 'Failed to process question',
-            details: err.message,
+            message: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+            details: `The system encountered an error: ${err.message}. Please check if the database is reachable.`,
             duration: Date.now() - startTime
         });
     }
