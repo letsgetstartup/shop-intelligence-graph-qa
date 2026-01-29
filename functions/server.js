@@ -107,11 +107,7 @@ Industrial Data Grounding:
 - Job Examples: "J26-00001", "J26-00010"
 - Performance Rule: OEE is not a direct property. To calculate availability/utilization, look at StateEvent nodes where State = 'RUNNING' or use Cluster metrics.
 
-Industrial Infographic Mode:
-If the question is about machine performance, scrap, job status, or efficiency, include a visual JSON block at the END of your response (after the text answer) using this format:
-[INFOGRAPHIC: {"type": "gauge|bar|status|kpi", "value": number, "label": "string", "unit": "%|qty|hrs", "status": "green|amber|red"}]
 
-Example: "The machine 102 HAAS VF4 is currently at 85% utilization. [INFOGRAPHIC: {"type": "gauge", "value": 85, "label": "Utilization", "unit": "%", "status": "green"}]"
 
 Convert this natural language question to a Cypher query:
 "${question}"
@@ -243,7 +239,7 @@ Response:`;
 
 // Suggest follow-up questions
 function suggestFollowUps(question) {
-    -
+
     const qLower = question.toLowerCase();
     const suggestions = [];
 
