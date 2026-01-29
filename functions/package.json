@@ -1,0 +1,21 @@
+{
+    "name": "shop-intelligence-functions",
+    "description": "Firebase Cloud Functions for Shop Intelligence",
+    "engines": {
+        "node": "20"
+    },
+    "main": "index.js",
+    "dependencies": {
+        "firebase-admin": "^11.8.0",
+        "firebase-functions": "^4.3.1",
+        "fastify": "^4.26.1",
+        "@fastify/cors": "^9.0.1",
+        "@falkordb/langchain-ts": "latest",
+        "@langchain/google-vertexai": "latest",
+        "@langchain/community": "latest",
+        "langchain": "latest",
+        "falkordb": "latest",
+        "dotenv": "^16.4.5"
+    },
+    "private": true
+}
