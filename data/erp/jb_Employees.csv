@@ -1,0 +1,16 @@
+EmployeeID,EmployeeName,Role,Shift,HourlyRate
+EMP0001,Dana Levi,CNC Operator,C,55
+EMP0002,Omer Cohen,CNC Operator,B,55
+EMP0003,Noa Ben-David,CNC Operator,B,65
+EMP0004,Amit Shani,Setup Technician,B,90
+EMP0005,Yossi Peretz,CNC Operator,B,55
+EMP0006,Shira Katz,CNC Operator,A,70
+EMP0007,Itai Mizrahi,CNC Operator,A,80
+EMP0008,Maya Azulay,Inspector,A,55
+EMP0009,Eli Rosen,CNC Operator,A,65
+EMP0010,Tamar Hadad,Setup Technician,A,90
+EMP0011,Gil Bar-On,Setup Technician,B,65
+EMP0012,Tal Shaked,CNC Operator,A,55
+EMP0013,Adi Shalom,Setup Technician,A,90
+EMP0014,Ronit Levi,CNC Operator,A,80
+EMP0015,Nir Shapira,CNC Operator,C,55

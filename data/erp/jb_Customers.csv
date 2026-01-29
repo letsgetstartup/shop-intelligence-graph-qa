@@ -1,0 +1,31 @@
+CustomerID,CustomerName,Industry,City,Country,Terms,CreditLimit
+CUST0001,Alpha Motion,Energy,Beer Sheva,Israel,Net 30,25000
+CUST0002,Negev Robotics,Defense,Haifa,Israel,Net 30,100000
+CUST0003,Galil Aero,Automation,Ashdod,Israel,Net 30,75000
+CUST0004,Carmel Medical Devices,Defense,Ashdod,Israel,Net 60,75000
+CUST0005,Orion Defense,Defense,Netanya,Israel,Net 30,25000
+CUST0006,Mediterranean Pumps,Medical,Netanya,Israel,Net 45,75000
+CUST0007,Tavor Tools,Automation,Netanya,Israel,Net 30,75000
+CUST0008,Keshet Optics,Automation,Beer Sheva,Israel,Net 30,25000
+CUST0009,Ramon Energy,Automation,Ashdod,Israel,Net 30,75000
+CUST0010,CNC Prototype Lab,Defense,Ashdod,Israel,Net 30,150000
+CUST0011,Haifa Maritime,Energy,Tel Aviv,Israel,Net 60,50000
+CUST0012,Arava AgriTech,Automation,Beer Sheva,Israel,Net 45,50000
+CUST0013,Hermon Motors,Industrial,Jerusalem,Israel,Net 60,25000
+CUST0014,Sharon Plastics,Defense,Beer Sheva,Israel,Net 45,100000
+CUST0015,Eilat Marine Systems,Medical,Jerusalem,Israel,Net 30,25000
+CUST0016,Golan Automation,Energy,Tel Aviv,Israel,Net 60,100000
+CUST0017,Sorek Semicon,Industrial,Haifa,Israel,Net 30,50000
+CUST0018,Nahal Precision,Industrial,Ashdod,Israel,Net 30,25000
+CUST0019,Maccabi Engineering,Medical,Tel Aviv,Israel,Net 30,150000
+CUST0020,Ziv Hydraulics,Energy,Ashdod,Israel,Net 30,75000
+CUST0021,Kinneret Water,Defense,Netanya,Israel,Net 30,100000
+CUST0022,Yarden Aerospace,Aerospace,Haifa,Israel,Net 30,75000
+CUST0023,Makhtesh Chemicals,Energy,Haifa,Israel,Net 45,75000
+CUST0024,Jaffa Packaging,Medical,Tel Aviv,Israel,Net 30,25000
+CUST0025,Barak Rail,Industrial,Haifa,Israel,Net 30,75000
+CUST0026,Gilboa Metalworks,Defense,Jerusalem,Israel,Net 30,150000
+CUST0027,Sufa Solar,Energy,Haifa,Israel,Net 30,75000
+CUST0028,Nitzan Electronics,Aerospace,Ashdod,Israel,Net 45,25000
+CUST0029,Rimon Food Machines,Aerospace,Ashdod,Israel,Net 30,150000
+CUST0030,Tzabar Defense,Automation,Ashdod,Israel,Net 60,50000

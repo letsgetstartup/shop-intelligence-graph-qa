@@ -1,0 +1,11 @@
+version: '3'
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkor_data:/data
+volumes:
+  falkor_data:
