@@ -1,313 +1,387 @@
+const fs = require("fs");
+const path = require("path");
+const { parse } = require("csv-parse");
+const { FalkorDB } = require("falkordb");
+require("dotenv").config();
 
-const fs = require('fs');
-const path = require('path');
-const { parse } = require('csv-parse');
-const { FalkorDB } = require('falkordb');
-require('dotenv').config();
+// Default to ../data/erp since that's where the CSVs are in this repo
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "../data/erp");
+const GRAPH_NAME = process.env.GRAPH_NAME || "shop";
+const FALKORDB_URL = process.env.FALKORDB_URL || "falkor://localhost:6379";
 
-const ERP_DATA_DIR = path.join(__dirname, '../data/erp');
-const MACHINE_DATA_DIR = path.join(__dirname, '../data/machines');
-const FALKORDB_URL = process.env.FALKORDB_URL || 'falkors://localhost:6379';
-const GRAPH_NAME = process.env.GRAPH_NAME || 'shop';
+const BATCH = 500;
+
+const trim = (v) => (v == null ? "" : String(v).trim());
+const toInt = (v) => {
+    const n = parseInt(trim(v), 10);
+    return Number.isFinite(n) ? n : 0;
+};
+const toFloat = (v) => {
+    const n = parseFloat(trim(v));
+    return Number.isFinite(n) ? n : 0;
+};
+const toTs = (v) => {
+    const s = trim(v);
+    if (!s) return null;
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? t : null;
+};
+
+async function readCsvRows(fileName) {
+    const filePath = path.join(DATA_DIR, fileName);
+    if (!fs.existsSync(filePath)) {
+        console.warn(`Warning: File not found: ${filePath}`);
+        return [];
+    }
+
+    const rows = [];
+    const parser = fs.createReadStream(filePath).pipe(
+        parse({ columns: true, trim: true, bom: true })
+    );
+
+    for await (const r of parser) rows.push(r);
+    return rows;
+}
+
+async function runBatches(graph, rows, cypher, mapRow) {
+    if (!rows || rows.length === 0) return;
+    console.log(`  > Ingesting ${rows.length} rows...`);
+    for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH).map(mapRow);
+        await graph.query(cypher, { params: { rows: batch } });
+        process.stdout.write(".");
+    }
+    console.log(""); // newline
+}
 
 async function main() {
-    console.log(`Connecting to FalkorDB at ${FALKORDB_URL}, Graph: ${GRAPH_NAME}`);
+    console.log(`Connecting: ${FALKORDB_URL}  Graph: ${GRAPH_NAME}`);
+    console.log(`Data Dir: ${DATA_DIR}`);
+
     const db = await FalkorDB.connect({ url: FALKORDB_URL });
     const graph = db.selectGraph(GRAPH_NAME);
 
-    // Create Indexes
-    console.log("Creating indexes...");
+    console.log("Creating Indexes...");
     try {
         await graph.query("CREATE INDEX FOR (c:Customer) ON (c.CustomerID)");
-        await graph.query("CREATE INDEX FOR (p:Part) ON (p.PartNum)");
         await graph.query("CREATE INDEX FOR (j:Job) ON (j.JobNum)");
+        await graph.query("CREATE INDEX FOR (p:Part) ON (p.PartNum)");
         await graph.query("CREATE INDEX FOR (o:Operation) ON (o.JobOperKey)");
-        await graph.query("CREATE INDEX FOR (m:Machine) ON (m.MachineName)"); // Using MachineName from WorkCenters/Clusters
+        await graph.query("CREATE INDEX FOR (m:Machine) ON (m.WorkCenterID)");
+        await graph.query("CREATE INDEX FOR (m:Machine) ON (m.MachineAlias)");
         await graph.query("CREATE INDEX FOR (e:Employee) ON (e.EmployeeID)");
         await graph.query("CREATE INDEX FOR (cl:Cluster) ON (cl.ClusterID)");
-        await graph.query("CREATE INDEX FOR (se:StateEvent) ON (se.StartTS)"); // Improved search for timeline
     } catch (err) {
-        console.log("Index creation note (may already exist):", err.message);
+        // Indexes might already exist, ignore errors
     }
 
-    // --- Helpers ---
-    const processFile = async (directory, filename, rowHandler) => {
-        const filePath = path.join(directory, filename);
-        if (!fs.existsSync(filePath)) {
-            console.warn(`File not found: ${filePath}, skipping.`);
-            return;
-        }
-        console.log(`Processing ${filename}...`);
-        const parser = fs.createReadStream(filePath).pipe(parse({ columns: true, trim: true, bom: true }));
-        let count = 0;
-        for await (const row of parser) {
-            await rowHandler(row, count);
-            count++;
-            if (count % 1000 === 0) process.stdout.write(`.`);
-        }
-        console.log(`\nImported ${count} rows from ${filename}`);
-    };
+    // ---- 0) Load WorkCenters first to build a MachineAlias -> WorkCenterID map
+    // This is crucial for linking Clusters to Machines accurately
+    console.log("Loading WorkCenters...");
+    const workCenters = await readCsvRows("jb_WorkCenters.csv");
+    const aliasToWC = new Map();
+    for (const r of workCenters) {
+        const wcId = trim(r.WorkCenterID);
+        const alias = trim(r.Machine);
+        if (wcId && alias) aliasToWC.set(alias, wcId);
+    }
 
-    // 1. Customers
-    await processFile(ERP_DATA_DIR, 'jb_Customers.csv', async (row, count) => {
-        const params = {
-            id: row.CustomerID,
-            props: {
-                CustomerID: row.CustomerID,
-                Name: row.CustomerName,
-                // Address: row.Address, // Missing in CSV
-                City: row.City,
-                // State: row.State, // Missing
-                // Zip: row.Zip, // Missing
-                Country: row.Country,
-                Industry: row.Industry,
-                Terms: row.Terms,
-                // ContactPerson: row.ContactPerson, // Missing
-                CreditLimit: parseFloat(row.CreditLimit || 0)
-            }
-        };
-        if (count === 0) console.log("Debug Customer Row:", JSON.stringify(row), "Params:", JSON.stringify(params));
-        await graph.query(`MERGE (c:Customer {CustomerID: $id}) SET c += $props`, { params });
-    });
-
-    // 2. Parts
-    await processFile(ERP_DATA_DIR, 'jb_Parts.csv', async (row) => {
-        const params = {
-            id: row.PartNum,
-            props: {
-                PartNum: row.PartNum,
-                Description: row.Description,
-                UOM: row.UOM,
-                Revision: row.Revision,
-                StdMaterial: row.StdMaterial,
-                StdCycleTimeSec: parseFloat(row.StdCycleTimeSec || 0),
-                StdCost: parseFloat(row.StdCost || 0),
-                SellPrice: parseFloat(row.SellPrice || 0)
-            }
-        };
-        await graph.query(`MERGE (p:Part {PartNum: $id}) SET p += $props`, { params });
-    });
-
-    // 3. Machines (from WorkCenters)
-    await processFile(ERP_DATA_DIR, 'jb_WorkCenters.csv', async (row) => {
-        // We will treat 'Machine' column as the unique identifier for the machine node if present, 
-        // OR use WorkCenterID as the Machine identifier if Machine column is empty/same.
-        // Based on headers: WorkCenterID,WorkCenterName,Machine,Department,MachineRatePerHour
-        const machineId = row.Machine || row.WorkCenterID;
-        const params = {
-            id: machineId,
-            props: {
-                MachineName: machineId,
-                WorkCenterID: row.WorkCenterID,
-                WorkCenterName: row.WorkCenterName,
-                Department: row.Department,
-                RatePerHour: parseFloat(row.MachineRatePerHour || 0)
-            }
-        };
-        await graph.query(`MERGE (m:Machine {MachineName: $id}) SET m += $props`, { params });
-    });
-
-    // 4. Employees
-    await processFile(ERP_DATA_DIR, 'jb_Employees.csv', async (row) => {
-        const params = {
-            id: row.EmployeeID,
-            props: {
-                EmployeeID: row.EmployeeID,
-                Name: row.EmployeeName,
-                Role: row.Role,
-                Shift: row.Shift,
-                HourlyRate: parseFloat(row.HourlyRate || 0)
-            }
-        };
-        await graph.query(`MERGE (e:Employee {EmployeeID: $id}) SET e += $props`, { params });
-    });
-
-    // 5. Jobs (Nodes + Relationships to Customer & Part)
-    await processFile(ERP_DATA_DIR, 'jb_Jobs.csv', async (row) => {
-        const dueTs = row.DueDate ? new Date(row.DueDate).getTime() : null;
-        const closeTs = row.CloseDate ? new Date(row.CloseDate).getTime() : null;
-
-        const params = {
-            jobNum: row.JobNum,
-            props: {
-                JobNum: row.JobNum,
-                SalesOrder: row.SalesOrder,
-                Revision: row.Revision,
-                JobStatus: row.JobStatus,
-                Priority: row.Priority,
-                QtyOrdered: parseInt(row.QtyOrdered || 0),
-                QtyCompleted: parseInt(row.QtyCompleted || 0),
-                QtyScrapped: parseInt(row.QtyScrapped || 0),
-                PlannedStart: row.PlannedStart,
-                DueDate: row.DueDate,
-                due_ts: dueTs,
-                CloseDate: row.CloseDate,
-                close_ts: closeTs,
-                Notes: row.Notes
-            },
-            custId: row.CustomerID,
-            partNum: row.PartNum
-        };
-
-        const query = `
-            MERGE (j:Job {JobNum: $jobNum}) SET j += $props
-            WITH j
-            MATCH (c:Customer {CustomerID: $custId})
-            MERGE (c)-[:PLACED]->(j)
-            WITH j
-            MATCH (p:Part {PartNum: $partNum})
-            MERGE (j)-[:PRODUCES]->(p)
-        `;
-        // Note: If Customer or Part doesn't exist, the rel creation might fail or do nothing.
-        // Ideally we ensure they exist. The MERGE on Customer/Part above handles existence.
-        // However, if the CSV has broken foreign keys, the MATCH will return nothing and relationships won't be created.
-        await graph.query(query, { params });
-    });
-
-    // 6. Cluster Events (Nodes + Rel to Machine)
-    await processFile(ERP_DATA_DIR, 'jb_SMKO_ClusterBridge.csv', async (row) => {
-        const startTs = new Date(row.ClusterStart).getTime();
-        const endTs = new Date(row.ClusterEnd).getTime();
-
-        const params = {
-            clusterId: row.ClusterID,
-            machineName: row.Machine,
-            props: {
-                ClusterID: row.ClusterID,
-                ClusterStart: row.ClusterStart,
-                start_ts: startTs,
-                ClusterEnd: row.ClusterEnd,
-                end_ts: endTs,
-                RunSec: parseInt(row.RunSec || 0),
-                CycleCount: parseInt(row.CycleCount || 0),
-                DurationSec: (endTs - startTs) / 1000
-            }
-        };
-
-        const query = `
-            MERGE (cl:Cluster {ClusterID: $clusterId}) SET cl += $props
-            WITH cl
-            MATCH (m:Machine {MachineName: $machineName})
-            MERGE (m)-[:HAS_CLUSTER]->(cl)
-        `;
-        await graph.query(query, { params });
-    });
-
-    // 7. Operations (Nodes + Rel to Job, Machine, Cluster)
-    await processFile(ERP_DATA_DIR, 'jb_JobOperations.csv', async (row) => {
-        const jobOperKey = `${row.JobNum}::${row.OperSeq}`;
-        const params = {
-            opKey: jobOperKey,
-            jobNum: row.JobNum,
-            machineName: row.Machine, // or match via WorkCenterID if Machine is empty, but let's try Machine field first
-            wcId: row.WorkCenterID,
-            clusterId: row.SMKO_ClusterID,
-            props: {
-                JobOperKey: jobOperKey,
-                JobNum: row.JobNum,
-                OperSeq: parseInt(row.OperSeq),
-                OperationDesc: row.OperationDesc,
-                StdSetupHrs: parseFloat(row.StdSetupHrs || 0),
-                StdRunHrsPerUnit: parseFloat(row.StdRunHrsPerUnit || 0),
-                QtyComplete: parseInt(row.QtyComplete || 0),
-                QtyScrap: parseInt(row.QtyScrap || 0),
-                SetupHrs: parseFloat(row.SetupHrs || 0),
-                RunHrs: parseFloat(row.RunHrs || 0),
-                Status: row.Status
-            }
-        };
-
-        let query = `
-            MERGE (o:Operation {JobOperKey: $opKey}) SET o += $props
-            WITH o
-            MATCH (j:Job {JobNum: $jobNum})
-            MERGE (j)-[:HAS_OPERATION]->(o)
-        `;
-
-        // Match machine by name if possible, else maybe by WC? 
-        // In jb_JobOperations.csv we have 'Machine' and 'WorkCenterID'.
-        // In jb_WorkCenters.csv we stored MachineName = Machine || WorkCenterID.
-        // So we should try to match on that.
-        // We'll trust 'Machine' column first if populated.
-
-        if (row.Machine) {
-            query += `
-                WITH o
-                MATCH (m:Machine {MachineName: $machineName})
-                MERGE (o)-[:USES_MACHINE]->(m)
-             `;
-        } else if (row.WorkCenterID) {
-            query += `
-                WITH o
-                MATCH (m:Machine {WorkCenterID: $wcId})
-                MERGE (o)-[:USES_MACHINE]->(m)
-             `;
-        }
-
-        if (row.SMKO_ClusterID && row.SMKO_ClusterID !== '') {
-            query += `
-                WITH o
-                MATCH (cl:Cluster {ClusterID: $clusterId})
-                MERGE (o)-[:IN_CLUSTER]->(cl)
-            `;
-        }
-
-        await graph.query(query, { params });
-    });
-
-    // 8. Labor Details (Employee -> Operation)
-    await processFile(ERP_DATA_DIR, 'jb_LaborDetails.csv', async (row) => {
-        const jobOperKey = `${row.JobNum}::${row.OperSeq}`;
-        const params = {
-            empId: row.EmployeeID,
-            opKey: jobOperKey,
-            laborHrs: parseFloat(row.LaborHrs || 0),
-            setupHrs: parseFloat(row.SetupHrs || 0),
-            runHrs: parseFloat(row.RunHrs || 0),
-        };
-
-        // We can add properties to the relationship
-        const query = `
-            MATCH (e:Employee {EmployeeID: $empId})
-            MATCH (o:Operation {JobOperKey: $opKey})
-            MERGE (e)-[r:PERFORMED_BY]->(o)
-            SET r.LaborHrs = $laborHrs, r.SetupHrs = $setupHrs, r.RunHrs = $runHrs
+    // ---- 1) Machines (keyed by WorkCenterID; alias stored in MachineAlias)
+    console.log("Ingesting Machines...");
+    await runBatches(
+        graph,
+        workCenters,
         `
-        await graph.query(query, { params });
-    });
+    UNWIND $rows AS row
+    MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
+    SET
+      m.WorkCenterName = row.WorkCenterName,
+      m.MachineAlias   = row.MachineAlias,
+      m.Department     = row.Department,
+      m.RatePerHour    = row.RatePerHour
+    `,
+        (r) => ({
+            WorkCenterID: trim(r.WorkCenterID),
+            WorkCenterName: trim(r.WorkCenterName),
+            MachineAlias: trim(r.Machine),
+            Department: trim(r.Department),
+            RatePerHour: toFloat(r.MachineRatePerHour),
+        })
+    );
 
-    // 9. Machine Timeline
-    const machineFiles = fs.readdirSync(MACHINE_DATA_DIR).filter(f => f.endsWith('.csv'));
-    for (const file of machineFiles) {
-        await processFile(MACHINE_DATA_DIR, file, async (row) => {
-            if (!row.Machine || !row.Start) return;
+    // ---- 2) Customers
+    console.log("Ingesting Customers...");
+    const customers = await readCsvRows("jb_Customers.csv");
+    await runBatches(
+        graph,
+        customers,
+        `
+    UNWIND $rows AS row
+    MERGE (c:Customer {CustomerID: row.CustomerID})
+    SET
+      c.CustomerName = row.CustomerName,
+      c.Industry     = row.Industry,
+      c.City         = row.City,
+      c.Country      = row.Country,
+      c.Terms        = row.Terms,
+      c.CreditLimit  = row.CreditLimit
+    `,
+        (r) => ({
+            CustomerID: trim(r.CustomerID),
+            CustomerName: trim(r.CustomerName),
+            Industry: trim(r.Industry),
+            City: trim(r.City),
+            Country: trim(r.Country),
+            Terms: trim(r.Terms),
+            CreditLimit: toFloat(r.CreditLimit),
+        })
+    );
 
-            const startTs = parseInt(row.Start);
-            const endTs = parseInt(row.End);
-            const duration = endTs - startTs;
+    // ---- 3) Parts
+    console.log("Ingesting Parts...");
+    const parts = await readCsvRows("jb_Parts.csv");
+    await runBatches(
+        graph,
+        parts,
+        `
+    UNWIND $rows AS row
+    MERGE (p:Part {PartNum: row.PartNum})
+    SET
+      p.Description      = row.Description,
+      p.UOM              = row.UOM,
+      p.Revision         = row.Revision,
+      p.StdMaterial      = row.StdMaterial,
+      p.StdCycleTimeSec  = row.StdCycleTimeSec,
+      p.StdCost          = row.StdCost,
+      p.SellPrice        = row.SellPrice
+    `,
+        (r) => ({
+            PartNum: trim(r.PartNum),
+            Description: trim(r.Description),
+            UOM: trim(r.UOM),
+            Revision: trim(r.Revision),
+            StdMaterial: trim(r.StdMaterial),
+            StdCycleTimeSec: toFloat(r.StdCycleTimeSec),
+            StdCost: toFloat(r.StdCost),
+            SellPrice: toFloat(r.SellPrice),
+        })
+    );
 
-            const params = {
-                machineName: row.Machine,
-                props: {
-                    State: row.State,
-                    StartTS: startTs,
-                    EndTS: endTs,
-                    Duration: duration,
-                    Operator: row.Operator || 'Unknown'
-                }
+    // ---- 4) Jobs + connect to Customer + Part
+    console.log("Ingesting Jobs...");
+    const jobs = await readCsvRows("jb_Jobs.csv");
+    await runBatches(
+        graph,
+        jobs,
+        `
+    UNWIND $rows AS row
+    MERGE (j:Job {JobNum: row.JobNum})
+    SET
+      j.SalesOrder    = row.SalesOrder,
+      j.Revision      = row.Revision,
+      j.JobStatus     = row.JobStatus,
+      j.Priority      = row.Priority,
+      j.QtyOrdered    = row.QtyOrdered,
+      j.QtyCompleted  = row.QtyCompleted,
+      j.QtyScrapped   = row.QtyScrapped,
+      j.PlannedStart  = row.PlannedStart,
+      j.DueDate       = row.DueDate,
+      j.due_ts        = row.due_ts,
+      j.CloseDate     = row.CloseDate,
+      j.close_ts      = row.close_ts,
+      j.Notes         = row.Notes
+    MERGE (c:Customer {CustomerID: row.CustomerID})
+    MERGE (p:Part {PartNum: row.PartNum})
+    MERGE (c)-[:PLACED]->(j)
+    MERGE (j)-[:PRODUCES]->(p)
+    `,
+        (r) => ({
+            JobNum: trim(r.JobNum),
+            SalesOrder: trim(r.SalesOrder),
+            CustomerID: trim(r.CustomerID),
+            PartNum: trim(r.PartNum),
+            Revision: trim(r.Revision),
+            JobStatus: trim(r.JobStatus),
+            Priority: trim(r.Priority),
+            QtyOrdered: toInt(r.QtyOrdered),
+            QtyCompleted: toInt(r.QtyCompleted),
+            QtyScrapped: toInt(r.QtyScrapped),
+            PlannedStart: trim(r.PlannedStart),
+            DueDate: trim(r.DueDate),
+            due_ts: toTs(r.DueDate),
+            CloseDate: trim(r.CloseDate),
+            close_ts: toTs(r.CloseDate),
+            Notes: trim(r.Notes),
+        })
+    );
+
+    // ---- 5) Clusters + connect to Machine (via alias->WorkCenterID mapping)
+    console.log("Ingesting Clusters...");
+    const clusters = await readCsvRows("jb_SMKO_ClusterBridge.csv");
+    await runBatches(
+        graph,
+        clusters,
+        `
+    UNWIND $rows AS row
+    MERGE (cl:Cluster {ClusterID: row.ClusterID})
+    SET
+      cl.ClusterStart = row.ClusterStart,
+      cl.start_ts     = row.start_ts,
+      cl.ClusterEnd   = row.ClusterEnd,
+      cl.end_ts       = row.end_ts,
+      cl.RunSec       = row.RunSec,
+      cl.CycleCount   = row.CycleCount,
+      cl.DurationSec  = row.DurationSec
+    MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
+    SET m.MachineAlias = CASE WHEN m.MachineAlias IS NULL OR m.MachineAlias = '' THEN row.MachineAlias ELSE m.MachineAlias END
+    MERGE (m)-[:HAS_CLUSTER]->(cl)
+    `,
+        (r) => {
+            const alias = trim(r.Machine);
+            const wcId = aliasToWC.get(alias) || alias; // fallback so cluster still connects to a machine node if alias not found
+            const startTs = toTs(r.ClusterStart);
+            const endTs = toTs(r.ClusterEnd);
+            return {
+                ClusterID: trim(r.ClusterID),
+                MachineAlias: alias,
+                WorkCenterID: wcId,
+                ClusterStart: trim(r.ClusterStart),
+                start_ts: startTs,
+                ClusterEnd: trim(r.ClusterEnd),
+                end_ts: endTs,
+                RunSec: toInt(r.RunSec),
+                CycleCount: toInt(r.CycleCount),
+                DurationSec: startTs && endTs ? (endTs - startTs) / 1000 : null,
             };
+        }
+    );
 
-            const query = `
-                MATCH (m:Machine {MachineName: $machineName})
-                CREATE (se:StateEvent $props)
-                MERGE (m)-[:HAS_STATE]->(se)
-            `;
-            await graph.query(query, { params });
-        });
-    }
+    // ---- 6) Operations + connect to Job + Machine + Cluster (if exists)
+    console.log("Ingesting Operations...");
+    const ops = await readCsvRows("jb_JobOperations.csv");
+    await runBatches(
+        graph,
+        ops,
+        `
+    UNWIND $rows AS row
+    WITH row, (row.JobNum + '::' + toString(row.OperSeq)) AS opKey
+    MERGE (o:Operation {JobOperKey: opKey})
+    SET
+      o.JobNum           = row.JobNum,
+      o.OperSeq          = row.OperSeq,
+      o.WorkCenterID     = row.WorkCenterID,
+      o.OperationDesc    = row.OperationDesc,
+      o.StdSetupHrs      = row.StdSetupHrs,
+      o.StdRunHrsPerUnit = row.StdRunHrsPerUnit,
+      o.PlannedStart     = row.PlannedStart,
+      o.PlannedEnd       = row.PlannedEnd,
+      o.ActualStart      = row.ActualStart,
+      o.ActualEnd        = row.ActualEnd,
+      o.MachineAlias     = row.MachineAlias,
+      o.QtyComplete      = row.QtyComplete,
+      o.QtyScrap         = row.QtyScrap,
+      o.SetupHrs         = row.SetupHrs,
+      o.RunHrs           = row.RunHrs,
+      o.MoveHrs          = row.MoveHrs,
+      o.QueueHrs         = row.QueueHrs,
+      o.Status           = row.Status
+    MERGE (j:Job {JobNum: row.JobNum})
+    MERGE (j)-[:HAS_OPERATION]->(o)
+    MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
+    SET m.MachineAlias = CASE WHEN m.MachineAlias IS NULL OR m.MachineAlias = '' THEN row.MachineAlias ELSE m.MachineAlias END
+    MERGE (o)-[:USES_MACHINE]->(m)
+    FOREACH (_ IN CASE WHEN row.ClusterID IS NULL OR row.ClusterID = '' THEN [] ELSE [1] END |
+      MERGE (cl:Cluster {ClusterID: row.ClusterID})
+      MERGE (o)-[:IN_CLUSTER]->(cl)
+    )
+    `,
+        (r) => ({
+            JobNum: trim(r.JobNum),
+            OperSeq: toInt(r.OperSeq),
+            WorkCenterID: trim(r.WorkCenterID),
+            OperationDesc: trim(r.OperationDesc),
+            StdSetupHrs: toFloat(r.StdSetupHrs),
+            StdRunHrsPerUnit: toFloat(r.StdRunHrsPerUnit),
+            PlannedStart: trim(r.PlannedStart),
+            PlannedEnd: trim(r.PlannedEnd),
+            ActualStart: trim(r.ActualStart),
+            ActualEnd: trim(r.ActualEnd),
+            MachineAlias: trim(r.Machine),
+            QtyComplete: toInt(r.QtyComplete),
+            QtyScrap: toInt(r.QtyScrap),
+            SetupHrs: toFloat(r.SetupHrs),
+            RunHrs: toFloat(r.RunHrs),
+            MoveHrs: toFloat(r.MoveHrs),
+            QueueHrs: toFloat(r.QueueHrs),
+            Status: trim(r.Status),
+            ClusterID: trim(r.SMKO_ClusterID),
+        })
+    );
 
-    console.log("Ingestion complete.");
+    // ---- 7) Employees
+    console.log("Ingesting Employees...");
+    const employees = await readCsvRows("jb_Employees.csv");
+    await runBatches(
+        graph,
+        employees,
+        `
+    UNWIND $rows AS row
+    MERGE (e:Employee {EmployeeID: row.EmployeeID})
+    SET
+      e.EmployeeName = row.EmployeeName,
+      e.Role         = row.Role,
+      e.Shift        = row.Shift,
+      e.HourlyRate   = row.HourlyRate
+    `,
+        (r) => ({
+            EmployeeID: trim(r.EmployeeID),
+            EmployeeName: trim(r.EmployeeName),
+            Role: trim(r.Role),
+            Shift: trim(r.Shift),
+            HourlyRate: toFloat(r.HourlyRate),
+        })
+    );
+
+    // ---- 8) LaborDetails -> connect Employee -> Operation with properties
+    console.log("Ingesting LaborDetails...");
+    const labor = await readCsvRows("jb_LaborDetails.csv");
+    await runBatches(
+        graph,
+        labor,
+        `
+    UNWIND $rows AS row
+    WITH row, (row.JobNum + '::' + toString(row.OperSeq)) AS opKey
+    MERGE (e:Employee {EmployeeID: row.EmployeeID})
+    MERGE (o:Operation {JobOperKey: opKey})
+    MERGE (e)-[r:WORKED_ON]->(o)
+    SET
+      r.LaborID  = row.LaborID,
+      r.LaborHrs = row.LaborHrs,
+      r.SetupHrs = row.SetupHrs,
+      r.RunHrs   = row.RunHrs,
+      r.ClockIn  = row.ClockIn,
+      r.ClockOut = row.ClockOut,
+      r.Comment  = row.Comment
+    `,
+        (r) => ({
+            LaborID: trim(r.LaborID),
+            EmployeeID: trim(r.EmployeeID),
+            JobNum: trim(r.JobNum),
+            OperSeq: toInt(r.OperSeq),
+            LaborHrs: toFloat(r.LaborHrs),
+            SetupHrs: toFloat(r.SetupHrs),
+            RunHrs: toFloat(r.RunHrs),
+            ClockIn: trim(r.ClockIn),
+            ClockOut: trim(r.ClockOut),
+            Comment: trim(r.Comment),
+        })
+    );
+
+    console.log("✅ Ingestion complete.");
     db.close();
 }
 
-main().catch(console.error);
+main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+});
