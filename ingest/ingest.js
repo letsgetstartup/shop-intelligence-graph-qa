@@ -27,6 +27,9 @@ const toTs = (v) => {
     return Number.isFinite(t) ? t : null;
 };
 
+// Helper to join non-empty strings for search_text
+const buildSearchText = (parts) => parts.map(trim).filter(p => p.length > 0).join(" ");
+
 async function readCsvRows(fileName) {
     const filePath = path.join(DATA_DIR, fileName);
     if (!fs.existsSync(filePath)) {
@@ -71,12 +74,13 @@ async function main() {
         await graph.query("CREATE INDEX FOR (m:Machine) ON (m.MachineAlias)");
         await graph.query("CREATE INDEX FOR (e:Employee) ON (e.EmployeeID)");
         await graph.query("CREATE INDEX FOR (cl:Cluster) ON (cl.ClusterID)");
+        // New indexes for semantics might be useful, e.g. on entity_type if we query by it often, 
+        // but label scans are usually fast enough.
     } catch (err) {
         // Indexes might already exist, ignore errors
     }
 
     // ---- 0) Load WorkCenters first to build a MachineAlias -> WorkCenterID map
-    // This is crucial for linking Clusters to Machines accurately
     console.log("Loading WorkCenters...");
     const workCenters = await readCsvRows("jb_WorkCenters.csv");
     const aliasToWC = new Map();
@@ -86,7 +90,7 @@ async function main() {
         if (wcId && alias) aliasToWC.set(alias, wcId);
     }
 
-    // ---- 1) Machines (keyed by WorkCenterID; alias stored in MachineAlias)
+    // ---- 1) Machines
     console.log("Ingesting Machines...");
     await runBatches(
         graph,
@@ -95,18 +99,36 @@ async function main() {
     UNWIND $rows AS row
     MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
     SET
+      m.entity_type    = 'Machine',
+      m.display_name   = row.display_name,
+      m.search_text    = row.search_text,
+      m.source         = 'jb_WorkCenters.csv',
       m.WorkCenterName = row.WorkCenterName,
       m.MachineAlias   = row.MachineAlias,
       m.Department     = row.Department,
       m.RatePerHour    = row.RatePerHour
     `,
-        (r) => ({
-            WorkCenterID: trim(r.WorkCenterID),
-            WorkCenterName: trim(r.WorkCenterName),
-            MachineAlias: trim(r.Machine),
-            Department: trim(r.Department),
-            RatePerHour: toFloat(r.MachineRatePerHour),
-        })
+        (r) => {
+            const wcId = trim(r.WorkCenterID);
+            const wcName = trim(r.WorkCenterName);
+            const alias = trim(r.Machine);
+            const dept = trim(r.Department);
+
+            // logic: "{MachineAlias}" else "{WorkCenterName}" else "WorkCenter {WorkCenterID}"
+            let displayName = alias;
+            if (!displayName) displayName = wcName;
+            if (!displayName) displayName = `WorkCenter ${wcId}`;
+
+            return {
+                WorkCenterID: wcId,
+                WorkCenterName: wcName,
+                MachineAlias: alias,
+                Department: dept,
+                RatePerHour: toFloat(r.MachineRatePerHour),
+                display_name: displayName,
+                search_text: buildSearchText([wcId, wcName, alias, dept])
+            };
+        }
     );
 
     // ---- 2) Customers
@@ -119,22 +141,39 @@ async function main() {
     UNWIND $rows AS row
     MERGE (c:Customer {CustomerID: row.CustomerID})
     SET
-      c.CustomerName = row.CustomerName,
-      c.Industry     = row.Industry,
-      c.City         = row.City,
-      c.Country      = row.Country,
-      c.Terms        = row.Terms,
-      c.CreditLimit  = row.CreditLimit
+      c.entity_type    = 'Customer',
+      c.display_name   = row.display_name,
+      c.description    = row.description,
+      c.search_text    = row.search_text,
+      c.source         = 'jb_Customers.csv',
+      c.CustomerName   = row.CustomerName,
+      c.Industry       = row.Industry,
+      c.City           = row.City,
+      c.Country        = row.Country,
+      c.Terms          = row.Terms,
+      c.CreditLimit    = row.CreditLimit
     `,
-        (r) => ({
-            CustomerID: trim(r.CustomerID),
-            CustomerName: trim(r.CustomerName),
-            Industry: trim(r.Industry),
-            City: trim(r.City),
-            Country: trim(r.Country),
-            Terms: trim(r.Terms),
-            CreditLimit: toFloat(r.CreditLimit),
-        })
+        (r) => {
+            const cid = trim(r.CustomerID);
+            const name = trim(r.CustomerName);
+            const city = trim(r.City);
+            const country = trim(r.Country);
+            const terms = trim(r.Terms);
+            const industry = trim(r.Industry);
+
+            return {
+                CustomerID: cid,
+                CustomerName: name,
+                Industry: industry,
+                City: city,
+                Country: country,
+                Terms: terms,
+                CreditLimit: toFloat(r.CreditLimit),
+                display_name: name || cid,
+                description: `Customer in ${country}/${city}, Terms: ${terms}, Industry: ${industry}`,
+                search_text: buildSearchText([cid, name, industry, city, country])
+            };
+        }
     );
 
     // ---- 3) Parts
@@ -147,6 +186,10 @@ async function main() {
     UNWIND $rows AS row
     MERGE (p:Part {PartNum: row.PartNum})
     SET
+      p.entity_type    = 'Part',
+      p.display_name   = row.display_name,
+      p.search_text    = row.search_text,
+      p.source         = 'jb_Parts.csv',
       p.Description      = row.Description,
       p.UOM              = row.UOM,
       p.Revision         = row.Revision,
@@ -155,19 +198,26 @@ async function main() {
       p.StdCost          = row.StdCost,
       p.SellPrice        = row.SellPrice
     `,
-        (r) => ({
-            PartNum: trim(r.PartNum),
-            Description: trim(r.Description),
-            UOM: trim(r.UOM),
-            Revision: trim(r.Revision),
-            StdMaterial: trim(r.StdMaterial),
-            StdCycleTimeSec: toFloat(r.StdCycleTimeSec),
-            StdCost: toFloat(r.StdCost),
-            SellPrice: toFloat(r.SellPrice),
-        })
+        (r) => {
+            const pnum = trim(r.PartNum);
+            const desc = trim(r.Description);
+
+            return {
+                PartNum: pnum,
+                Description: desc,
+                UOM: trim(r.UOM),
+                Revision: trim(r.Revision),
+                StdMaterial: trim(r.StdMaterial),
+                StdCycleTimeSec: toFloat(r.StdCycleTimeSec),
+                StdCost: toFloat(r.StdCost),
+                SellPrice: toFloat(r.SellPrice),
+                display_name: desc ? `${pnum} - ${desc}` : pnum,
+                search_text: buildSearchText([pnum, desc, trim(r.StdMaterial)])
+            };
+        }
     );
 
-    // ---- 4) Jobs + connect to Customer + Part
+    // ---- 4) Jobs
     console.log("Ingesting Jobs...");
     const jobs = await readCsvRows("jb_Jobs.csv");
     await runBatches(
@@ -177,6 +227,10 @@ async function main() {
     UNWIND $rows AS row
     MERGE (j:Job {JobNum: row.JobNum})
     SET
+      j.entity_type    = 'Job',
+      j.display_name   = row.display_name,
+      j.search_text    = row.search_text,
+      j.source         = 'jb_Jobs.csv',
       j.SalesOrder    = row.SalesOrder,
       j.Revision      = row.Revision,
       j.JobStatus     = row.JobStatus,
@@ -192,30 +246,37 @@ async function main() {
       j.Notes         = row.Notes
     MERGE (c:Customer {CustomerID: row.CustomerID})
     MERGE (p:Part {PartNum: row.PartNum})
-    MERGE (c)-[:PLACED]->(j)
-    MERGE (j)-[:PRODUCES]->(p)
+    MERGE (c)-[:PLACED {source: 'jb_Jobs.csv'}]->(j)
+    MERGE (j)-[:PRODUCES {qty_ordered: row.QtyOrdered, qty_completed: row.QtyCompleted}]->(p)
     `,
-        (r) => ({
-            JobNum: trim(r.JobNum),
-            SalesOrder: trim(r.SalesOrder),
-            CustomerID: trim(r.CustomerID),
-            PartNum: trim(r.PartNum),
-            Revision: trim(r.Revision),
-            JobStatus: trim(r.JobStatus),
-            Priority: trim(r.Priority),
-            QtyOrdered: toInt(r.QtyOrdered),
-            QtyCompleted: toInt(r.QtyCompleted),
-            QtyScrapped: toInt(r.QtyScrapped),
-            PlannedStart: trim(r.PlannedStart),
-            DueDate: trim(r.DueDate),
-            due_ts: toTs(r.DueDate),
-            CloseDate: trim(r.CloseDate),
-            close_ts: toTs(r.CloseDate),
-            Notes: trim(r.Notes),
-        })
+        (r) => {
+            const jnum = trim(r.JobNum);
+            const so = trim(r.SalesOrder);
+
+            return {
+                JobNum: jnum,
+                SalesOrder: so,
+                CustomerID: trim(r.CustomerID),
+                PartNum: trim(r.PartNum),
+                Revision: trim(r.Revision),
+                JobStatus: trim(r.JobStatus),
+                Priority: trim(r.Priority),
+                QtyOrdered: toInt(r.QtyOrdered),
+                QtyCompleted: toInt(r.QtyCompleted),
+                QtyScrapped: toInt(r.QtyScrapped),
+                PlannedStart: trim(r.PlannedStart),
+                DueDate: trim(r.DueDate),
+                due_ts: toTs(r.DueDate),
+                CloseDate: trim(r.CloseDate),
+                close_ts: toTs(r.CloseDate),
+                Notes: trim(r.Notes),
+                display_name: `Job ${jnum}` + (so ? ` (SO ${so})` : ""),
+                search_text: buildSearchText([jnum, so, trim(r.JobStatus), trim(r.Priority), trim(r.Notes)])
+            };
+        }
     );
 
-    // ---- 5) Clusters + connect to Machine (via alias->WorkCenterID mapping)
+    // ---- 5) Clusters
     console.log("Ingesting Clusters...");
     const clusters = await readCsvRows("jb_SMKO_ClusterBridge.csv");
     await runBatches(
@@ -225,6 +286,10 @@ async function main() {
     UNWIND $rows AS row
     MERGE (cl:Cluster {ClusterID: row.ClusterID})
     SET
+      cl.entity_type    = 'Cluster',
+      cl.display_name   = row.display_name,
+      cl.search_text    = row.search_text,
+      cl.source         = 'jb_SMKO_ClusterBridge.csv',
       cl.ClusterStart = row.ClusterStart,
       cl.start_ts     = row.start_ts,
       cl.ClusterEnd   = row.ClusterEnd,
@@ -234,29 +299,35 @@ async function main() {
       cl.DurationSec  = row.DurationSec
     MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
     SET m.MachineAlias = CASE WHEN m.MachineAlias IS NULL OR m.MachineAlias = '' THEN row.MachineAlias ELSE m.MachineAlias END
-    MERGE (m)-[:HAS_CLUSTER]->(cl)
+    MERGE (m)-[:HAS_CLUSTER {cluster_start: row.ClusterStart, cluster_end: row.ClusterEnd, duration_sec: row.DurationSec}]->(cl)
     `,
         (r) => {
             const alias = trim(r.Machine);
-            const wcId = aliasToWC.get(alias) || alias; // fallback so cluster still connects to a machine node if alias not found
+            const wcId = aliasToWC.get(alias) || alias;
             const startTs = toTs(r.ClusterStart);
             const endTs = toTs(r.ClusterEnd);
+            const cid = trim(r.ClusterID);
+            const start = trim(r.ClusterStart);
+            const end = trim(r.ClusterEnd);
+
             return {
-                ClusterID: trim(r.ClusterID),
+                ClusterID: cid,
                 MachineAlias: alias,
                 WorkCenterID: wcId,
-                ClusterStart: trim(r.ClusterStart),
+                ClusterStart: start,
                 start_ts: startTs,
-                ClusterEnd: trim(r.ClusterEnd),
+                ClusterEnd: end,
                 end_ts: endTs,
                 RunSec: toInt(r.RunSec),
                 CycleCount: toInt(r.CycleCount),
                 DurationSec: startTs && endTs ? (endTs - startTs) / 1000 : null,
+                display_name: `Cluster ${cid} (${start} -> ${end})`,
+                search_text: buildSearchText([cid])
             };
         }
     );
 
-    // ---- 6) Operations + connect to Job + Machine + Cluster (if exists)
+    // ---- 6) Operations
     console.log("Ingesting Operations...");
     const ops = await readCsvRows("jb_JobOperations.csv");
     await runBatches(
@@ -267,6 +338,10 @@ async function main() {
     WITH row, (row.JobNum + '::' + toString(row.OperSeq)) AS opKey
     MERGE (o:Operation {JobOperKey: opKey})
     SET
+      o.entity_type      = 'Operation',
+      o.display_name     = row.display_name,
+      o.search_text      = row.search_text,
+      o.source           = 'jb_JobOperations.csv',
       o.JobNum           = row.JobNum,
       o.OperSeq          = row.OperSeq,
       o.WorkCenterID     = row.WorkCenterID,
@@ -286,36 +361,45 @@ async function main() {
       o.QueueHrs         = row.QueueHrs,
       o.Status           = row.Status
     MERGE (j:Job {JobNum: row.JobNum})
-    MERGE (j)-[:HAS_OPERATION]->(o)
+    MERGE (j)-[:HAS_OPERATION {oper_seq: row.OperSeq}]->(o)
     MERGE (m:Machine {WorkCenterID: row.WorkCenterID})
     SET m.MachineAlias = CASE WHEN m.MachineAlias IS NULL OR m.MachineAlias = '' THEN row.MachineAlias ELSE m.MachineAlias END
-    MERGE (o)-[:USES_MACHINE]->(m)
+    MERGE (o)-[:USES_MACHINE {workcenter_id: row.WorkCenterID, machine_alias: row.MachineAlias}]->(m)
     FOREACH (_ IN CASE WHEN row.ClusterID IS NULL OR row.ClusterID = '' THEN [] ELSE [1] END |
       MERGE (cl:Cluster {ClusterID: row.ClusterID})
-      MERGE (o)-[:IN_CLUSTER]->(cl)
+      MERGE (o)-[:IN_CLUSTER {cluster_id: row.ClusterID}]->(cl)
     )
     `,
-        (r) => ({
-            JobNum: trim(r.JobNum),
-            OperSeq: toInt(r.OperSeq),
-            WorkCenterID: trim(r.WorkCenterID),
-            OperationDesc: trim(r.OperationDesc),
-            StdSetupHrs: toFloat(r.StdSetupHrs),
-            StdRunHrsPerUnit: toFloat(r.StdRunHrsPerUnit),
-            PlannedStart: trim(r.PlannedStart),
-            PlannedEnd: trim(r.PlannedEnd),
-            ActualStart: trim(r.ActualStart),
-            ActualEnd: trim(r.ActualEnd),
-            MachineAlias: trim(r.Machine),
-            QtyComplete: toInt(r.QtyComplete),
-            QtyScrap: toInt(r.QtyScrap),
-            SetupHrs: toFloat(r.SetupHrs),
-            RunHrs: toFloat(r.RunHrs),
-            MoveHrs: toFloat(r.MoveHrs),
-            QueueHrs: toFloat(r.QueueHrs),
-            Status: trim(r.Status),
-            ClusterID: trim(r.SMKO_ClusterID),
-        })
+        (r) => {
+            const jnum = trim(r.JobNum);
+            const opdesc = trim(r.OperationDesc);
+            const opseq = toInt(r.OperSeq);
+            const alias = trim(r.Machine);
+
+            return {
+                JobNum: jnum,
+                OperSeq: opseq,
+                WorkCenterID: trim(r.WorkCenterID),
+                OperationDesc: opdesc,
+                StdSetupHrs: toFloat(r.StdSetupHrs),
+                StdRunHrsPerUnit: toFloat(r.StdRunHrsPerUnit),
+                PlannedStart: trim(r.PlannedStart),
+                PlannedEnd: trim(r.PlannedEnd),
+                ActualStart: trim(r.ActualStart),
+                ActualEnd: trim(r.ActualEnd),
+                MachineAlias: alias,
+                QtyComplete: toInt(r.QtyComplete),
+                QtyScrap: toInt(r.QtyScrap),
+                SetupHrs: toFloat(r.SetupHrs),
+                RunHrs: toFloat(r.RunHrs),
+                MoveHrs: toFloat(r.MoveHrs),
+                QueueHrs: toFloat(r.QueueHrs),
+                Status: trim(r.Status),
+                ClusterID: trim(r.SMKO_ClusterID),
+                display_name: `Op ${opseq}: ${opdesc} (Job ${jnum})`,
+                search_text: buildSearchText([jnum, opseq.toString(), opdesc, alias, trim(r.Status)])
+            };
+        }
     );
 
     // ---- 7) Employees
@@ -328,21 +412,32 @@ async function main() {
     UNWIND $rows AS row
     MERGE (e:Employee {EmployeeID: row.EmployeeID})
     SET
+      e.entity_type    = 'Employee',
+      e.display_name   = row.display_name,
+      e.search_text    = row.search_text,
+      e.source         = 'jb_Employees.csv',
       e.EmployeeName = row.EmployeeName,
       e.Role         = row.Role,
       e.Shift        = row.Shift,
       e.HourlyRate   = row.HourlyRate
     `,
-        (r) => ({
-            EmployeeID: trim(r.EmployeeID),
-            EmployeeName: trim(r.EmployeeName),
-            Role: trim(r.Role),
-            Shift: trim(r.Shift),
-            HourlyRate: toFloat(r.HourlyRate),
-        })
+        (r) => {
+            const eid = trim(r.EmployeeID);
+            const name = trim(r.EmployeeName);
+
+            return {
+                EmployeeID: eid,
+                EmployeeName: name,
+                Role: trim(r.Role),
+                Shift: trim(r.Shift),
+                HourlyRate: toFloat(r.HourlyRate),
+                display_name: name || eid,
+                search_text: buildSearchText([eid, name, trim(r.Role), trim(r.Shift)])
+            };
+        }
     );
 
-    // ---- 8) LaborDetails -> connect Employee -> Operation with properties
+    // ---- 8) LaborDetails
     console.log("Ingesting LaborDetails...");
     const labor = await readCsvRows("jb_LaborDetails.csv");
     await runBatches(
@@ -355,6 +450,7 @@ async function main() {
     MERGE (o:Operation {JobOperKey: opKey})
     MERGE (e)-[r:WORKED_ON]->(o)
     SET
+      r.source   = 'jb_LaborDetails.csv',
       r.LaborID  = row.LaborID,
       r.LaborHrs = row.LaborHrs,
       r.SetupHrs = row.SetupHrs,

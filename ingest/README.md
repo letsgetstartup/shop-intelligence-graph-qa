@@ -1,46 +1,25 @@
 # Shop Intelligence Graph Ingestion
 
-This folder contains the scripts to ingest the Shop Intelligence "Canonical Graph" into FalkorDB.
+This folder contains the scripts to ingest the Shop Intelligence "Semantic Graph" into FalkorDB.
 
-## Canonical Graph Model
+## Semantic Graph Model
 
-We enforce a strict schema where nodes are keyed by their primary identifiers from the ERP system.
+We enforce a strict schema where nodes have both canonical keys (for joining) and semantic properties (for humans and agents).
 
-### Node Labels & Keys
+### Universal Semantic Properties
+Every node (`Customer`, `Job`, `Machine`, etc.) now includes:
+*   `display_name`: Human-readable label (e.g., "Job 2042 (SO 123)"). **Use this for UI captions.**
+*   `entity_type`: The node type string (e.g., "Job").
+*   `search_text`: Concatenated keywords for vector search or simple text retrieval.
+*   `source`: Origin CSV file.
 
-| Label       | Primary Key | Description |
-|-------------|-------------|-------------|
-| `:Customer` | `CustomerID` | Customers who place jobs |
-| `:Job`      | `JobNum` | Manufacturing jobs |
-| `:Part`     | `PartNum` | The item being produced |
-| `:Operation`| `JobOperKey` | `JobNum::OperSeq` (Unique operation instance) |
-| `:Machine`  | `WorkCenterID`| Keyed by WorkCenterID. Display name stored as `MachineAlias` |
-| `:Employee` | `EmployeeID` | Staff performing work |
-| `:Cluster`  | `ClusterID` | Machine monitoring cluster events |
-
-### Relationships
-
-* `(c:Customer)-[:PLACED]->(j:Job)`
-* `(j:Job)-[:PRODUCES]->(p:Part)`
-* `(j:Job)-[:HAS_OPERATION]->(o:Operation)`
-* `(o:Operation)-[:USES_MACHINE]->(m:Machine)`
-    * **Crucial**: Operations connect to Machines via `WorkCenterID`.
-* `(m:Machine)-[:HAS_CLUSTER]->(cl:Cluster)`
-* `(o:Operation)-[:IN_CLUSTER]->(cl:Cluster)` (when `SMKO_ClusterID` is present)
-* `(e:Employee)-[:WORKED_ON {LaborHrs, ...}]->(o:Operation)`
+See [docs/graph_schema.md](../docs/graph_schema.md) for the full schema definition.
 
 ## Ingestion Script
 
-The `ingest.js` script reads CSV files from `../data/erp` (default) and populates the graph.
+The `ingest.js` script reads CSV files from `../data/erp` and populates the graph with these semantic fields automatically.
 
-### Key Logic Changes
-* **Machines**: We now strictly use `WorkCenterID` as the key for `:Machine` nodes.
-    * The `jb_WorkCenters.csv` file provides the master list.
-    * `jb_JobOperations.csv` connects via `WorkCenterID`.
-    * `jb_SMKO_ClusterBridge.csv` (which often only has machine aliases) uses a lookup map to find the correct `WorkCenterID`.
-* **Timestamps**: Dates are converted to epoch timestamps (`_ts` suffixes) for range queries.
-
-## Running Ingestion
+### Running Ingestion
 
 1. Ensure your FalkorDB instance is running:
    ```bash
@@ -58,28 +37,20 @@ The `ingest.js` script reads CSV files from `../data/erp` (default) and populate
    node ingest.js
    ```
 
-## Sanity Check Queries
+## Visualization "How-To"
 
-Run these in the FalkorDB Browser or via CLI to verify the graph is fully connected.
+When using the FalkorDB Browser or other visualization tools:
+*   **Node Captions**: Configure the tool to use `display_name` as the caption. This replaces obscure IDs like `105` with "Job 50021".
+*   **Inspection**: Click any node to see `search_text` and `entity_type` along with its raw data.
 
-**1. Check Total Relationships**
-```cypher
-MATCH ()-[r]->() RETURN count(r)
-```
-
-**2. Verify Full Chain (Customer -> Job -> Op -> Machine)**
-This query proves that all joins are working correcty.
+### Sanity Check Query for Semantics
+Run this to see the rich, connected graph with human-readable names:
 ```cypher
 MATCH p=(c:Customer)-[:PLACED]->(j:Job)-[:HAS_OPERATION]->(o:Operation)-[:USES_MACHINE]->(m:Machine)
-OPTIONAL MATCH (m)-[:HAS_CLUSTER]->(cl:Cluster)
-OPTIONAL MATCH (e:Employee)-[:WORKED_ON]->(o)
-RETURN c.CustomerName, j.JobNum, o.OperSeq, m.MachineAlias, cl.ClusterID, e.EmployeeName
+RETURN 
+  c.display_name as Customer, 
+  j.display_name as Job, 
+  o.display_name as Op, 
+  m.display_name as Machine
 LIMIT 50
-```
-
-**3. Check for Orphaned Operations (Should be 0)**
-```cypher
-MATCH (o:Operation)
-WHERE NOT (o)-[:USES_MACHINE]->()
-RETURN count(o) as OrphanedOps
 ```
