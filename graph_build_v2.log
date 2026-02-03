@@ -1,0 +1,89 @@
+time="2026-02-03T13:32:35Z" level=warning msg="/opt/shop-intelligence/antigravity_deploy/deploy/docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Container shop_pg Running 
+ Container shop_falkordb Running 
+Attaching to shop_graph_builder
+ Container shop_pg Waiting 
+ Container shop_pg Healthy 
+ Container shop_flyway Starting 
+ Container shop_flyway Started 
+ Container shop_flyway Waiting 
+ Container shop_falkordb Waiting 
+ Container shop_falkordb Healthy 
+ Container shop_flyway Exited 
+ Container shop_graph_builder Starting 
+ Container shop_graph_builder Started 
+shop_graph_builder  | 
+shop_graph_builder  | > shop-graph-builder@0.1.0 start
+shop_graph_builder  | > node src/index.js
+shop_graph_builder  | 
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.134Z","mode":"full_rebuild","graphName":"shop","msg":"Graph Builder starting"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.167Z","graphName":"shop","msg":"Starting full graph rebuild"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.169Z","err":{"type":"ErrorReply","message":"Attribute 'job_num' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Job) ON (n.job_num)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.171Z","err":{"type":"ErrorReply","message":"Attribute 'operation_key' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Operation) ON (n.operation_key)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.172Z","err":{"type":"ErrorReply","message":"Attribute 'machine_code' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Machine) ON (n.machine_code)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.173Z","err":{"type":"ErrorReply","message":"Attribute 'assembly_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:ToolAssembly) ON (n.assembly_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.174Z","err":{"type":"ErrorReply","message":"Attribute 'tool_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Tool) ON (n.tool_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.175Z","err":{"type":"ErrorReply","message":"Attribute 'holder_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Holder) ON (n.holder_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.176Z","err":{"type":"ErrorReply","message":"Attribute 'lot_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:InventoryLot) ON (n.lot_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.177Z","err":{"type":"ErrorReply","message":"Attribute 'program_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:NCProgram) ON (n.program_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.178Z","err":{"type":"ErrorReply","message":"Attribute 'cam_project_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:CAMProject) ON (n.cam_project_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.179Z","err":{"type":"ErrorReply","message":"Attribute 'part_num' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Part) ON (n.part_num)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.180Z","err":{"type":"ErrorReply","message":"Attribute 'customer_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Customer) ON (n.customer_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":50,"time":"2026-02-03T13:32:40.181Z","err":{"type":"ErrorReply","message":"Attribute 'shift_id' is already indexed","stack":""},"cypher":"CREATE INDEX FOR (n:Shift) ON (n.shift_id)","msg":"GRAPH.QUERY failed"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.225Z","view":"graph_export.node_machines","count":10,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.228Z","label":"Machine","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.233Z","view":"graph_export.node_parts","count":140,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.242Z","label":"Part","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.246Z","view":"graph_export.node_customers","count":30,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.250Z","label":"Customer","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.253Z","view":"graph_export.node_jobs","count":0,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.253Z","label":"Job","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.256Z","view":"graph_export.node_operations","count":0,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.256Z","label":"Operation","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.263Z","view":"graph_export.node_tools","count":130,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.278Z","label":"Tool","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.281Z","view":"graph_export.node_holders","count":14,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.283Z","label":"Holder","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.291Z","view":"graph_export.node_tool_assemblies","count":160,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.337Z","label":"ToolAssembly","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.341Z","view":"graph_export.node_inventory_lots","count":189,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.368Z","label":"InventoryLot","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.372Z","view":"graph_export.node_cam_projects","count":139,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.391Z","label":"CAMProject","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.400Z","view":"graph_export.node_nc_programs","count":666,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.514Z","label":"NCProgram","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.517Z","view":"graph_export.node_shifts","count":3,"msg":"Fetched node rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.518Z","label":"Shift","msg":"Upserted nodes"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.520Z","view":"graph_export.edge_job_for_part","count":0,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.520Z","rel":"FOR_PART","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.522Z","view":"graph_export.edge_job_for_customer","count":0,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.522Z","rel":"FOR_CUSTOMER","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.523Z","view":"graph_export.edge_job_has_operation","count":0,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.523Z","rel":"HAS_OPERATION","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.525Z","view":"graph_export.edge_operation_runs_on_machine","count":0,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.525Z","rel":"RUNS_ON","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:40.574Z","view":"graph_export.edge_operation_requires_assembly","count":4162,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.222Z","rel":"REQUIRES","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.224Z","view":"graph_export.edge_assembly_uses_tool","count":160,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.237Z","rel":"USES_TOOL","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.239Z","view":"graph_export.edge_assembly_uses_holder","count":160,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.250Z","rel":"USES_HOLDER","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.254Z","view":"graph_export.edge_machine_pocket_loaded","count":183,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.281Z","rel":"HAS_POCKET","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.284Z","view":"graph_export.edge_lot_contains_assembly","count":189,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.309Z","rel":"CONTAINS","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.311Z","view":"graph_export.edge_cam_project_for_part","count":139,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.323Z","rel":"FOR_PART","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:41.364Z","view":"graph_export.edge_cam_operation_uses_assembly","count":4825,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.314Z","rel":"USES","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.317Z","view":"graph_export.edge_nc_program_for_operation","count":666,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.364Z","rel":"FOR_OPERATION","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.384Z","view":"graph_export.edge_nc_program_calls_assembly","count":4162,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.890Z","rel":"CALLS","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.897Z","view":"graph_export.edge_shiftplan_operation_in_shift","count":666,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.984Z","rel":"SCHEDULED","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:42.990Z","view":"graph_export.edge_operation_consumed_assembly","count":408,"msg":"Fetched edge rows"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:43.063Z","rel":"CONSUMED","msg":"Upserted edges"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:43.063Z","graphName":"shop","msg":"Graph rebuild complete"}
+shop_graph_builder  | {"level":30,"time":"2026-02-03T13:32:43.066Z","msg":"Graph Builder finished (one-shot)."}
+[Kshop_graph_builder exited with code 0

@@ -1,0 +1,102 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shop_pg
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: shop_user
+      POSTGRES_PASSWORD: shop_pass
+    # Best practice: do NOT publish Postgres port publicly.
+    # Expose for internal containers only.
+    expose:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_user -d shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: shop_flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Base migrations from pg_graph_package
+      - ./db/migrations:/flyway/sql/base:ro
+      # QueryWeaver semantic views migration (qw schema)
+      - ./queryweaver/db/migrations:/flyway/sql/qw:ro
+    command: >
+      -url=jdbc:postgresql://postgres:5432/shop
+      -user=shop_user
+      -password=shop_pass
+      -connectRetries=60
+      migrate
+    # Flyway reads all migrations in /flyway/sql recursively.
+    # We mount two folders under /flyway/sql/*.
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: shop_falkordb
+    # Best practice: do NOT publish Redis port (6379) publicly.
+    expose:
+      - "6379"
+      - "3000"
+    ports:
+      # Optional: expose browser UI publicly. Prefer reverse-proxy (Caddy) + restricted firewall.
+      - "3000:3000"
+    volumes:
+      - falkordbdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  graph_builder:
+    build:
+      context: ./graph_builder
+    container_name: shop_graph_builder
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+      falkordb:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: postgresql://shop_user:shop_pass@postgres:5432/shop
+      FALKOR_URL: redis://falkordb:6379
+      GRAPH_NAME: shop
+      MODE: full_rebuild
+      BATCH_SIZE: "500"
+      LOG_LEVEL: info
+    restart: "no"
+
+  api:
+    build:
+      context: ./services/api
+    container_name: shop_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      flyway:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      POSTGRES_URL: "postgresql://shop_user:shop_pass@postgres:5432/shop"
+      FALKOR_URL: "redis://falkordb:6379"
+      GRAPH_NAME: "shop"
+      QUERYWEAVER_CONFIG_PATH: "/app/config/queryweaver.config.json"
+    ports:
+      - "3001:3001"
+
+volumes:
+  pgdata:
+  falkordbdata:

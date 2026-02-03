@@ -1,0 +1,33 @@
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+
+[notice] A new release of pip is available: 23.0.1 -> 26.0
+[notice] To update, run: pip install --upgrade pip
+Found 25 sheets: ['jb_Customers', 'jb_Employees', 'jb_JobOperations', 'jb_Jobs', 'jb_LaborDetails', 'jb_Parts', 'jb_SMKO_ClusterBridge', 'jb_WorkCenters', 'kg_README_DataModel', 'kg_MachineProcessMap', 'kg_ToolMaster', 'kg_HolderMaster', 'kg_ToolAssembly', 'kg_ToolLifeModel', 'kg_ToolInventoryLots', 'kg_MachineMagazine', 'kg_SolidCAM_Projects', 'kg_SolidCAM_OperationTools', 'kg_NC_Programs', 'kg_NC_ProgramTools', 'kg_JobOpRequiredTools', 'kg_DimShifts', 'kg_ShiftPlan', 'kg_ToolConsumption', 'kg_ExampleQueries']
+Phase 1: Truncating all tables...
+Phase 2: Loading data...
+Loading jb_Customers -> shop."jb_Customers" (30 rows)
+Loading jb_Employees -> shop."jb_Employees" (15 rows)
+Loading jb_JobOperations -> shop."jb_JobOperations" (1999 rows)
+Loading jb_Jobs -> shop."jb_Jobs" (1073 rows)
+Loading jb_LaborDetails -> shop."jb_LaborDetails" (1999 rows)
+Loading jb_Parts -> shop."jb_Parts" (140 rows)
+Loading jb_SMKO_ClusterBridge -> shop."jb_SMKO_ClusterBridge" (1073 rows)
+Loading jb_WorkCenters -> shop."jb_WorkCenters" (12 rows)
+Loading kg_README_DataModel -> shop."kg_README_DataModel" (15 rows)
+Loading kg_MachineProcessMap -> shop."kg_MachineProcessMap" (10 rows)
+Loading kg_ToolMaster -> shop."kg_ToolMaster" (130 rows)
+Loading kg_HolderMaster -> shop."kg_HolderMaster" (14 rows)
+Loading kg_ToolAssembly -> shop."kg_ToolAssembly" (160 rows)
+Loading kg_ToolLifeModel -> shop."kg_ToolLifeModel" (160 rows)
+Loading kg_ToolInventoryLots -> shop."kg_ToolInventoryLots" (189 rows)
+Loading kg_MachineMagazine -> shop."kg_MachineMagazine" (288 rows)
+Loading kg_SolidCAM_Projects -> shop."kg_SolidCAM_Projects" (139 rows)
+Loading kg_SolidCAM_OperationTools -> shop."kg_SolidCAM_OperationTools" (4825 rows)
+Loading kg_NC_Programs -> shop."kg_NC_Programs" (666 rows)
+Loading kg_NC_ProgramTools -> shop."kg_NC_ProgramTools" (4162 rows)
+Loading kg_JobOpRequiredTools -> shop."kg_JobOpRequiredTools" (4162 rows)
+Loading kg_DimShifts -> shop."kg_DimShifts" (3 rows)
+Loading kg_ShiftPlan -> shop."kg_ShiftPlan" (666 rows)
+Loading kg_ToolConsumption -> shop."kg_ToolConsumption" (408 rows)
+Loading kg_ExampleQueries -> shop."kg_ExampleQueries" (5 rows)
+Done.

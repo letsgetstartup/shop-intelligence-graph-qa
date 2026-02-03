@@ -1,0 +1,19 @@
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+
+[notice] A new release of pip is available: 23.0.1 -> 26.0
+[notice] To update, run: pip install --upgrade pip
+Found 25 sheets: ['jb_Customers', 'jb_Employees', 'jb_JobOperations', 'jb_Jobs', 'jb_LaborDetails', 'jb_Parts', 'jb_SMKO_ClusterBridge', 'jb_WorkCenters', 'kg_README_DataModel', 'kg_MachineProcessMap', 'kg_ToolMaster', 'kg_HolderMaster', 'kg_ToolAssembly', 'kg_ToolLifeModel', 'kg_ToolInventoryLots', 'kg_MachineMagazine', 'kg_SolidCAM_Projects', 'kg_SolidCAM_OperationTools', 'kg_NC_Programs', 'kg_NC_ProgramTools', 'kg_JobOpRequiredTools', 'kg_DimShifts', 'kg_ShiftPlan', 'kg_ToolConsumption', 'kg_ExampleQueries']
+Loading jb_Customers -> shop."jb_Customers" (30 rows)
+Loading jb_Employees -> shop."jb_Employees" (15 rows)
+Loading jb_JobOperations -> shop."jb_JobOperations" (1999 rows)
+Traceback (most recent call last):
+  File "/work/scripts/load_excel_to_postgres.py", line 86, in <module>
+    main()
+  File "/work/scripts/load_excel_to_postgres.py", line 78, in main
+    with cur.copy(copy_sql) as copy:
+  File "/usr/local/lib/python3.10/contextlib.py", line 142, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.10/site-packages/psycopg/cursor.py", line 330, in copy
+    raise ex.with_traceback(None)
+psycopg.errors.ForeignKeyViolation: insert or update on table "jb_JobOperations" violates foreign key constraint "fk_jb_jobops_job"
+DETAIL:  Key (JobNum)=(J26-00001) is not present in table "jb_Jobs".

@@ -1,8 +1,11 @@
-const Fastify = require('fastify');
-const cors = require('@fastify/cors');
-const { FalkorDB } = require('falkordb');
-const { VertexAI } = require('@google-cloud/vertexai');
-require('dotenv').config();
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import { FalkorDB } from 'falkordb';
+import { VertexAI } from '@google-cloud/vertexai';
+import dotenv from 'dotenv';
+import queryweaverPlugin from './queryweaver/plugin.js';
+
+dotenv.config();
 
 const app = Fastify({ logger: false });
 const PORT = process.env.PORT || 8080;
@@ -228,6 +231,55 @@ app.get('/testdb', async (request, reply) => {
     }
 });
 
+// Graph Visualization Endpoint
+app.post('/graph/raw', async (request, reply) => {
+    try {
+        const { query, limit } = request.body || {};
+        const cypher = query || `MATCH (n)-[r]->(m) RETURN n,r,m LIMIT ${limit || 100}`;
+
+        const client = await getDBClient();
+        const graph = client.selectGraph('shop');
+        const result = await graph.query(cypher);
+
+        const nodes = new Map();
+        const links = [];
+
+        result.data.forEach(row => {
+            Object.values(row).forEach(entity => {
+                if (!entity) return;
+
+                // Node
+                if (entity.labels) {
+                    nodes.set(entity.id, {
+                        id: entity.id,
+                        label: entity.labels[0],
+                        group: entity.labels[0],
+                        properties: entity.properties
+                    });
+                }
+                // Relationship
+                else if (entity.relationshipType) {
+                    links.push({
+                        id: entity.id,
+                        source: entity.sourceId,
+                        target: entity.destinationId,
+                        type: entity.relationshipType,
+                        properties: entity.properties
+                    });
+                }
+            });
+        });
+
+        return {
+            nodes: Array.from(nodes.values()),
+            links: links
+        };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: err.message });
+    }
+});
+
 // Main query endpoint
 app.post('/query', async (request, reply) => {
     const startTime = Date.now();
@@ -275,16 +327,21 @@ app.post('/query', async (request, reply) => {
 
 const start = async () => {
     try {
+        // Register QueryWeaver plugin
+        await app.register(queryweaverPlugin, {
+            configPath: process.env.QUERYWEAVER_CONFIG_PATH || './config/queryweaver.config.json',
+            postgresUrl: process.env.POSTGRES_URL || 'postgresql://shop_user:shop_pass@localhost:5432/shop',
+            falkorUrl: process.env.FALKOR_URL || process.env.FALKORDB_URL || 'redis://localhost:6379',
+            graphName: process.env.GRAPH_NAME || 'shop'
+        });
+
         await app.listen({ port: PORT, host: '0.0.0.0' });
         console.log(`Server listening on ${PORT}`);
+        console.log(`QueryWeaver endpoint: POST /queryweaver/query`);
     } catch (err) {
         console.error(err);
         process.exit(1);
     }
 };
 
-if (require.main === module) {
-    start();
-}
-
-module.exports = app;
+start();

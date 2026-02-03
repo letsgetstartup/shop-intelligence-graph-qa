@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shop_pg
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: shop_user
+      POSTGRES_PASSWORD: shop_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_user -d shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: shop_flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/flyway/sql:ro
+    command: >
+      -url=jdbc:postgresql://postgres:5432/shop
+      -user=shop_user
+      -password=shop_pass
+      -connectRetries=60
+      migrate
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: shop_falkordb
+    ports:
+      - "6379:6379"
+      - "3000:3000"
+    volumes:
+      - falkordbdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  graph_builder:
+    build:
+      context: ./graph_builder
+    container_name: shop_graph_builder
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+      falkordb:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: postgresql://shop_user:shop_pass@postgres:5432/shop
+      FALKOR_URL: redis://falkordb:6379
+      GRAPH_NAME: shop_intelligence
+      MODE: full_rebuild
+      BATCH_SIZE: "200"
+      LOG_LEVEL: info
+    restart: "no"
+
+volumes:
+  pgdata:
+  falkordbdata:

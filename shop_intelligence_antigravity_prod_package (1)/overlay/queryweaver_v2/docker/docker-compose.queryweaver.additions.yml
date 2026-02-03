@@ -1,0 +1,20 @@
+# Merge guidance for docker compose
+# This file is intentionally additive: you merge it into your main compose or use it as reference.
+
+services:
+  api:
+    build:
+      context: ./services/api
+    environment:
+      PORT: "3001"
+      POSTGRES_URL: "postgresql://shop_user:shop_pass@postgres:5432/shop"
+      FALKOR_URL: "redis://falkordb:6379"
+      GRAPH_NAME: "shop"
+      QUERYWEAVER_CONFIG_PATH: "/app/config/queryweaver.config.json"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+    ports:
+      - "3001:3001"

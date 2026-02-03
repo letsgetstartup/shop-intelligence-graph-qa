@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import GraphView from './GraphView';
 import {
     Activity,
     AlertTriangle,
@@ -151,6 +152,11 @@ const MODULE_DATA = {
             { label: "Down-Time Pareto", query: "Show a Pareto analysis of top 5 downtime causes this month.", desc: "80% of downtime is caused by 20% of machines. Find them." },
             { label: "Customer On-Time Report", query: "Generate an on-time delivery (OTD) report by customer.", desc: "Analyze OTD trends to improve customer service scores." }
         ],
+        sidebarAlerts: []
+    },
+    Graph: {
+        investigate: [],
+        recommendations: [],
         sidebarAlerts: []
     }
 };
@@ -381,7 +387,7 @@ export default function ShopIntelligenceApp() {
 
         try {
             // Connect to the real API we just deployed
-            const response = await fetch('https://api-hiaawehita-uc.a.run.app/query', {
+            const response = await fetch('http://localhost:8080/query', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -556,16 +562,18 @@ export default function ShopIntelligenceApp() {
                     </div>
                 </div>
                 {/* Chat Messages Feed */}
-                <div className="flex-1 overflow-y-auto px-10 py-10 custom-scrollbar bg-slate-50/30">
-                    <div className="max-w-4xl mx-auto">
-                        {messages.map((msg, idx) => (
-                            <ChatMessage key={idx} msg={msg} />
-                        ))}
-                        <div ref={chatEndRef} />
+                {activeModule === 'Graph' ? <GraphView /> : (
+                    <div className="flex-1 overflow-y-auto px-10 py-10 custom-scrollbar bg-slate-50/30">
+                        <div className="max-w-4xl mx-auto">
+                            {messages.map((msg, idx) => (
+                                <ChatMessage key={idx} msg={msg} />
+                            ))}
+                            <div ref={chatEndRef} />
+                        </div>
                     </div>
-                </div>
+                )}
                 {/* ACTION AREA: Suggestions & Input */}
-                <div className="p-8 bg-white border-t border-slate-100 shadow-[0_-10px_40px_rgba(0,0,0,0.02)]">
+                <div className={`p-8 bg-white border-t border-slate-100 shadow-[0_-10px_40px_rgba(0,0,0,0.02)] ${activeModule === 'Graph' ? 'hidden' : ''}`}>
                     <div className="max-w-4xl mx-auto">
                         {/* DYNAMIC INVESTIGATE & RECOMMEND CHIPS */}
                         <div className="mb-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">

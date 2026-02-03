@@ -1,0 +1,44 @@
+# Merge this into your existing docker-compose.yml (repo root).
+# Adds Postgres + Flyway. If you already have them, ensure service names/env match.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: shop_user
+      POSTGRES_PASSWORD: shop_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_user -d shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  flyway:
+    image: flyway/flyway:10-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/flyway/sql:ro
+    command: >
+      -url=jdbc:postgresql://postgres:5432/shop
+      -user=shop_user
+      -password=shop_pass
+      -connectRetries=60
+      migrate
+
+  # Example: wire env into your existing API service (rename "api" to your service name)
+  # api:
+  #   environment:
+  #     POSTGRES_URL: postgresql://shop_user:shop_pass@postgres:5432/shop
+  #     FALKOR_URL: redis://falkordb:6379
+  #     GRAPH_NAME: shop
+  #     QUERYWEAVER_CONFIG_PATH: /app/config/queryweaver.config.json
+
+volumes:
+  pgdata:
