@@ -8,6 +8,48 @@
         ],
         "rewrites": [
             {
+                "source": "/ping",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
+                "source": "/testdb",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
+                "source": "/query",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
+                "source": "/queryweaver/**",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
+                "source": "/graph/**",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
+                "source": "/admin/**",
+                "run": {
+                    "serviceId": "api",
+                    "region": "us-central1"
+                }
+            },
+            {
                 "source": "**",
                 "destination": "/index.html"
             }

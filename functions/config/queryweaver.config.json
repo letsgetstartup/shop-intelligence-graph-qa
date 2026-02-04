@@ -1,0 +1,115 @@
+{
+  "service": {
+    "basePath": "/queryweaver",
+    "routePath": "/query",
+    "readOnly": true,
+    "maxSqlRows": 1000,
+    "sqlTimeoutSeconds": 10,
+    "graphTimeoutMs": 5000,
+    "maxGraphDepth": 3,
+    "logging": "json"
+  },
+  "datasources": {
+    "postgres": {
+      "schemaPreference": [
+        "core",
+        "shop"
+      ],
+      "defaultSchema": "shop"
+    },
+    "falkordb": {
+      "graphName": "shop"
+    }
+  },
+  "routing": [
+    {
+      "id": "missing_tools_next_shift",
+      "match": [
+        "missing",
+        "next shift"
+      ],
+      "strategy": "sql_then_graph_optional",
+      "sqlTemplate": "missing_tools_next_shift",
+      "cypherTemplate": "tool_alternatives_for_missing_assemblies",
+      "notes": "SQL provides missing assemblies; graph may provide alternates/compatibility."
+    },
+    {
+      "id": "blocked_operations_missing_tools",
+      "match": [
+        "blocked",
+        "missing",
+        "tool"
+      ],
+      "strategy": "sql_only",
+      "sqlTemplate": "blocked_operations_missing_tools"
+    },
+    {
+      "id": "tool_usage_for_job",
+      "match": [
+        "tool usage",
+        "job"
+      ],
+      "strategy": "hybrid",
+      "sqlTemplate": "tool_usage_for_job",
+      "cypherTemplate": "job_operation_machine_chain"
+    },
+    {
+      "id": "machines_loaded_magazine",
+      "match": [
+        "machines",
+        "loaded",
+        "magazine"
+      ],
+      "strategy": "sql_only",
+      "sqlTemplate": "machines_loaded_magazine"
+    },
+    {
+      "id": "compare_nc_vs_required",
+      "match": [
+        "compare",
+        "nc",
+        "required"
+      ],
+      "strategy": "sql_only",
+      "sqlTemplate": "compare_nc_vs_required"
+    },
+    {
+      "id": "high_scrap_cost",
+      "match": [
+        "scrap",
+        "cost"
+      ],
+      "strategy": "sql_only",
+      "sqlTemplate": "machines_loaded_magazine"
+    },
+    {
+      "id": "machine_operators",
+      "match": [
+        "operator",
+        "machine"
+      ],
+      "strategy": "hybrid",
+      "sqlTemplate": "machines_loaded_magazine",
+      "cypherTemplate": "job_operation_machine_chain"
+    }
+  ],
+  "schemaHints": {
+    "preferredViews": [
+      "core.operations",
+      "core.required_tools",
+      "core.machine_magazine",
+      "core.tool_inventory",
+      "core.shift_plan",
+      "core.nc_program_tools"
+    ],
+    "fallbackTables": [
+      "shop.\"jb_JobOperations\"",
+      "shop.\"kg_JobOpRequiredTools\"",
+      "shop.\"kg_MachineMagazine\"",
+      "shop.\"kg_ToolInventoryLots\"",
+      "shop.\"kg_ToolAssembly\"",
+      "shop.\"kg_NC_ProgramTools\"",
+      "shop.\"kg_ShiftPlan\""
+    ]
+  }
+}

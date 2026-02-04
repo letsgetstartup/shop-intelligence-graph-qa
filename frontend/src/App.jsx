@@ -386,8 +386,8 @@ export default function ShopIntelligenceApp() {
         setMessages(prev => [...prev, { type: 'system', isThinking: true }]);
 
         try {
-            // Connect to the real API we just deployed
-            const response = await fetch('http://localhost:8080/query', {
+            // Connect to the API (same-origin, Firebase Hosting rewrites to Cloud Function)
+            const response = await fetch('/query', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

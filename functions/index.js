@@ -1,5 +1,10 @@
 const { onRequest } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const app = require("./server");
+
+// Define secrets for best practice (can also be provided via .env)
+const POSTGRES_URL = defineSecret("POSTGRES_URL");
+const FALKORDB_URL = defineSecret("FALKORDB_URL");
 
 console.log("Initializing Cloud Function Wrapper...");
 
@@ -9,7 +14,8 @@ exports.api = onRequest({
     timeoutSeconds: 300,
     memory: "1GiB",
     vpcConnector: "shop-intel-connector",
-    vpcConnectorEgressSettings: "ALL_TRAFFIC"
+    vpcConnectorEgressSettings: "PRIVATE_RANGES_ONLY",
+    secrets: [POSTGRES_URL, FALKORDB_URL]
 }, async (req, res) => {
     try {
         console.error(`[WRAPPER] Processing ${req.method} ${req.url}`);
