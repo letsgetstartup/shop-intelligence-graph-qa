@@ -386,13 +386,22 @@ export default function ShopIntelligenceApp() {
         setMessages(prev => [...prev, { type: 'system', isThinking: true }]);
 
         try {
+            // Extract job_num from URL params (e.g. ?job_num=J26-00010)
+            const urlParams = new URLSearchParams(window.location.search);
+            const jobNum = urlParams.get('job_num') || urlParams.get('jobNum');
+
             // Connect to the API (same-origin, Firebase Hosting rewrites to Cloud Function)
             const response = await fetch('/query', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ question: text }),
+                body: JSON.stringify({
+                    question: text,
+                    params: {
+                        job_num: jobNum
+                    }
+                }),
             });
 
             const data = await response.json();

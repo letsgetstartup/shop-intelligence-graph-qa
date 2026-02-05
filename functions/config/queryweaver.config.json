@@ -91,6 +91,13 @@
       "strategy": "hybrid",
       "sqlTemplate": "machines_loaded_magazine",
       "cypherTemplate": "job_operation_machine_chain"
+    },
+    {
+      "id": "general_query",
+      "match": [],
+      "strategy": "sql_only",
+      "sqlTemplate": "general_operations_summary",
+      "notes": "DEFAULT FALLBACK: General operations overview - does NOT require job_num"
     }
   ],
   "schemaHints": {

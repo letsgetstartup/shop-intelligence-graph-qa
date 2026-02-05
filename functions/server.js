@@ -172,8 +172,29 @@ Rules:
 
 Return ONLY the final response text (with optional INFOGRAPHIC + ACTIONS blocks).`;
 
-    const result = await model.generateContent(prompt);
-    return result.response.candidates[0].content.parts[0].text.trim();
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+    while (attempt < MAX_RETRIES) {
+        try {
+            const result = await model.generateContent(prompt);
+            return result.response.candidates[0].content.parts[0].text.trim();
+        } catch (err) {
+            // Check for 429 or other retryable errors
+            const isRateLimit = String(err).includes("429") || String(err).includes("RESOURCE_EXHAUSTED");
+            if (isRateLimit && attempt < MAX_RETRIES - 1) {
+                const waitMs = 1000 * Math.pow(2, attempt) + Math.random() * 500; // Exponential backoff + jitter
+                console.warn(`Vertex AI 429 hit. Retrying in ${Math.round(waitMs)}ms... (Attempt ${attempt + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+                attempt++;
+                continue;
+            }
+            // If strictly a 429 and we exhausted retries, return a polite fallback
+            if (isRateLimit) {
+                return "System is currently experiencing high traffic (429). Please try your query again in a few moments.";
+            }
+            throw err;
+        }
+    }
 }
 
 // ------------------------

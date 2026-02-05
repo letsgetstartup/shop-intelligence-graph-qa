@@ -18,7 +18,8 @@ export function chooseRoute(question, routingRules) {
     const ok = r.match.every((w) => q.includes(String(w).toLowerCase()));
     if (ok) return r;
   }
-  return routingRules.find((r) => r.id === "tool_usage_for_job") || routingRules[0];
+  // Use the last route as default fallback (should be general_query)
+  return routingRules[routingRules.length - 1] || routingRules[0];
 }
 
 export function normalizeJobNum(params, question = "") {
