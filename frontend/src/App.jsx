@@ -36,14 +36,14 @@ import {
 const MODULE_DATA = {
     Dashboard: {
         investigate: [
-            { label: "High Scrap Cost (Turning)", query: "Analyze the root cause and financial impact of the recent scrap spike in Turning department.", desc: "Identify which machine in Turning is causing the most scrap." },
-            { label: "HAAS OEE Gap", query: "Analyze the availability and performance losses for machine '102 HAAS VF4'.", desc: "Compare downtime vs setup time for HAAS machines." },
-            { label: "Top Customer Delay Risk", query: "Proactively check status for JobNum 'J26-00010' and detect risks.", desc: "Verify if J26-00010 is tracking for its due date." }
+            { label: "58 Blocked Operations", query: "Which operations are blocked due to missing tools?", desc: "Multiple jobs waiting for tools - J26-00001, J26-00002, J26-00005 affected." },
+            { label: "Critical Tools Out of Stock", query: "Which tools are missing for job J26-00001?", desc: "Several critical 'A' level tools completely unavailable." },
+            { label: "Top Customer Delay Risk", query: "What tools does job J26-00010 need?", desc: "Verify if J26-00010 has all required tools available." }
         ],
         recommendations: [
-            { label: "ROI Optimization Report", query: "Which machines have the highest RatePerHour and lowest utilization?", desc: "Prioritize uptime for high-revenue machines like '23 DOOSAN PUMA 700'." },
-            { label: "Capacity Utilization Audit", query: "Identify available 'Milling' and 'Turning' slots based on current JobStatus.", desc: "Find open windows for new high-priority orders." },
-            { label: "Turning Dept Efficiency Pivot", query: "Compare Employee roles in Turning department to identify skill gaps.", desc: "Balance skill-sets across Morning and Afternoon shifts." }
+            { label: "Urgent Tool Procurement", query: "Show me all tools that are needed but out of stock", desc: "Fastest path to unblock 58 waiting operations." },
+            { label: "Tool Inventory Audit", query: "Show machines and their loaded magazine status", desc: "Verify tool availability across all machines." },
+            { label: "Job Priority Resequencing", query: "Which jobs can run with available tools?", desc: "Maximize throughput while waiting for missing tools." }
         ],
         followUps: [
             "How many jobs are currently in progress?",
@@ -51,8 +51,8 @@ const MODULE_DATA = {
             "Show me customers with overdue jobs"
         ],
         sidebarAlerts: [
-            { id: 'd1', level: 'critical', title: 'Late Job Risk', desc: 'J26-00010 (Galil Aero) is 2 days behind.', query: "Analyze delay for Job J26-00010 and suggest a recovery plan." },
-            { id: 'd2', level: 'warning', title: 'Scrap Outlier', desc: 'Op 40 reported 8% scrap in last hour.', query: "Investigate scrap rate spike in Dept 40 Operation." }
+            { id: 'd1', level: 'critical', title: 'Missing Critical Tools', desc: 'J26-00001: 2 critical tools out of stock.', query: "What tools are missing for job J26-00001?" },
+            { id: 'd2', level: 'warning', title: '58 Blocked Operations', desc: '58 ops waiting for tools across 5+ jobs.', query: "Which operations are blocked due to missing tools?" }
         ]
     },
     Planning: {

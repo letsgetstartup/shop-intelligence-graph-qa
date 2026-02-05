@@ -25,5 +25,20 @@ Thumbs.db
 *.swp
 *.swo
 
+
 # Project Data (Optional: ignore if large/sensitive)
 # data/
+
+# Secrets
+functions/*secret*.txt
+functions/falkor_secret.txt
+functions/falkor_secret_external.txt
+functions/postgres_secret_external.txt
+
+# Logs
+*.log
+firepit-log.txt
+data_load.log
+
+# Firebase
+.firebase/
