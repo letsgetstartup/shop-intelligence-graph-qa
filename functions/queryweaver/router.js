@@ -10,10 +10,20 @@ export function parseRequest(body) {
   return RequestSchema.parse(body);
 }
 
-export function chooseRoute(question, routingRules) {
+export function chooseRoute(question, routingRules, params = {}) {
   const q = question.toLowerCase();
   forbidWriteOperations(question);
 
+  // Extract job_num if present in params or question
+  const jobNum = normalizeJobNum(params, question);
+
+  // If job_num is present, prioritize routing to job-specific handler
+  if (jobNum) {
+    const jobRoute = routingRules.find(r => r.id === 'tool_usage_for_job');
+    if (jobRoute) return jobRoute;
+  }
+
+  // Otherwise, use keyword matching
   for (const r of routingRules) {
     const ok = r.match.every((w) => q.includes(String(w).toLowerCase()));
     if (ok) return r;

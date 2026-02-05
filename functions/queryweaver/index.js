@@ -46,7 +46,7 @@ export function createQueryWeaver(opts) {
   }
 
   async function handle(question, params = {}) {
-    const route = chooseRoute(question, routingRules);
+    const route = chooseRoute(question, routingRules, params);
     const strategy = route.strategy;
 
     log.info({ route: route.id, strategy }, "queryweaver.route.selected");
