@@ -146,7 +146,7 @@ function fallbackSuggestions(question) {
 // ------------------------
 async function summarizeQueryWeaverResult(question, qwResult) {
     const vertexAI = getVertexAI();
-    const model = vertexAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gemini-2.0-flash-exp" });
+    const model = vertexAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gemini-2.5-pro" });
 
     // Keep payload bounded
     const raw = JSON.stringify(qwResult).slice(0, 12000);
@@ -172,7 +172,7 @@ Rules:
 
 Return ONLY the final response text (with optional INFOGRAPHIC + ACTIONS blocks).`;
 
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 5;
     let attempt = 0;
     while (attempt < MAX_RETRIES) {
         try {
