@@ -386,38 +386,44 @@ export default function ShopIntelligenceApp() {
         setMessages(prev => [...prev, { type: 'system', isThinking: true }]);
 
         try {
-            // Extract job_num from URL params (e.g. ?job_num=J26-00010)
-            const urlParams = new URLSearchParams(window.location.search);
-            const jobNum = urlParams.get('job_num') || urlParams.get('jobNum');
-
-            // Connect to the API (same-origin, Firebase Hosting rewrites to Cloud Function)
-            const response = await fetch('/query', {
+            // Use LLM hybrid endpoint (SQL + Cypher)
+            const response = await fetch('/queryweaver/hybrid', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    question: text,
-                    params: {
-                        job_num: jobNum
-                    }
-                }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: text }),
             });
 
             const data = await response.json();
+            const evidence = data.evidence || {};
+
+            // Build reasoning block from evidence
+            let thought = '';
+            if (data.strategy) thought += `Strategy: ${data.strategy.toUpperCase()}`;
+            if (data.reasoning) thought += `\n${data.reasoning}`;
+            if (evidence.sql_rows > 0) thought += `\nSQL returned ${evidence.sql_rows} rows`;
+            if (evidence.graph_data) thought += `\nGraph traversal completed`;
+            if (data.timing) thought += `\nLatency: ${(data.timing / 1000).toFixed(1)}s`;
+
+            let cypherDisplay = '';
+            if (evidence.sql_query) cypherDisplay += `/* SQL */\n${evidence.sql_query}`;
+            if (evidence.sql_query && evidence.cypher_query) cypherDisplay += '\n\n';
+            if (evidence.cypher_query) cypherDisplay += `/* Cypher */\n${evidence.cypher_query}`;
 
             setMessages(prev => {
                 const newMsgs = [...prev];
-                newMsgs.pop(); // Remove thinking
+                newMsgs.pop();
                 newMsgs.push({
                     type: 'system',
                     text: data.error
-                        ? `**Error:** ${data.error}\n\n${data.details || data.message || ''}`
-                        : (data.answer || "I'm sorry, I couldn't process that request."),
-                    reasoning: data.cypherQuery ? {
-                        thought: "Querying manufacturing graph for real-time insights...",
+                        ? `**Error:** ${data.error}`
+                        : (data.answer || "Query completed but returned no answer."),
+                    reasoning: cypherDisplay ? {
+                        thought: thought || 'Processing query...',
+                        cypher: cypherDisplay
+                    } : (data.cypherQuery ? {
+                        thought: thought || 'Graph query',
                         cypher: data.cypherQuery
-                    } : null,
+                    } : null),
                     followUps: data.suggestions || [],
                     onFollowUp: handleSend
                 });

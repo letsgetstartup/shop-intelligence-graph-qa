@@ -12,7 +12,7 @@ const GraphView = () => {
     const fetchGraph = async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:8080/graph/raw', {
+            const res = await fetch('/graph/raw', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ limit: 300 }) // Limit to avoids browser lag
