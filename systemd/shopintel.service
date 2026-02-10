@@ -1,0 +1,32 @@
+[Unit]
+Description=ShopIntel Manufacturing Intelligence Platform
+Documentation=https://github.com/letsgetstartup/shop-intelligence-graph-qa
+After=docker.service nvidia-persistenced.service
+Requires=docker.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/shopintel
+Environment=COMPOSE_PROJECT_NAME=shopintel-dgx-spark
+
+# Start all services using both compose files
+ExecStart=/usr/bin/docker compose -f docker-compose.local.yml -f docker-compose.dgx-spark.yml up -d --remove-orphans
+
+# Graceful shutdown with 60s timeout for LLM to save state
+ExecStop=/usr/bin/docker compose -f docker-compose.local.yml -f docker-compose.dgx-spark.yml down --timeout 60
+
+# Restart policy: retry 3 times with 30s delay
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shopintel
+
+[Install]
+WantedBy=multi-user.target

@@ -1,66 +1,218 @@
 #!/usr/bin/env bash
+# =============================================================================
+# Offline Bundle Builder for DGX Spark Air-Gapped Deployment
+# Run this on a CONNECTED machine, then transfer the bundle to DGX Spark.
+#
+# Prerequisites:
+#   - Docker with buildx (multi-arch support)
+#   - Internet access (for pulling images and models)
+#   - ~50GB free disk space
+#
+# Usage:
+#   bash scripts/build-offline-bundle.sh [output-dir]
+#   # Default output: ./shopintel-dgx-bundle/
+#
+# After building, transfer to DGX Spark:
+#   rsync -avP shopintel-dgx-bundle/ user@dgx-spark:/opt/shopintel/
+#   # Then on DGX Spark:
+#   bash /opt/shopintel/scripts/deploy-offline.sh
+# =============================================================================
 set -euo pipefail
-# Build an offline bundle for air-gapped DGX Spark deployment
-# Run this in a CONNECTED environment, then ship the bundle to the target
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-OUT="${1:-offline_bundle}"
-mkdir -p "$OUT/images" "$OUT/config" "$OUT/scripts" "$OUT/data" "$OUT/manifest"
+OUT="${1:-shopintel-dgx-bundle}"
+PLATFORM="${PLATFORM:-linux/arm64}"
+LLM_MODEL="${LLM_MODEL:-llama3.1:70b}"
 
-echo "============================================"
-echo " Building Offline Bundle: $OUT"
-echo "============================================"
-
-# 1) Save Docker images
+echo "============================================================"
+echo " ShopIntel Offline Bundle Builder"
+echo "============================================================"
+echo "  Output:   $OUT/"
+echo "  Platform: $PLATFORM"
+echo "  Model:    $LLM_MODEL"
+echo "  Repo:     $REPO_ROOT"
 echo ""
-echo "[1/5] Saving Docker images..."
-for img in \
-  postgres:16-alpine \
-  falkordb/falkordb:latest \
-  shopintel-local-backend:latest \
-  shopintel-local-frontend:latest; do
-  FNAME=$(echo "$img" | tr '/:' '_').tar
-  echo "  Saving $img -> $FNAME"
-  docker save "$img" > "$OUT/images/$FNAME"
+
+# Create bundle directory structure
+mkdir -p "$OUT"/{images,config,scripts,data/erp,db/migrations,models,manifest,systemd}
+
+# ─────────────────────────────────────────────────────────────────
+# Step 1: Pull and save base Docker images (ARM64)
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "[1/7] Pulling and saving Docker images for $PLATFORM..."
+
+IMAGES=(
+    "postgres:16-alpine"
+    "falkordb/falkordb:latest"
+    "ollama/ollama:latest"
+    "node:18-alpine"
+    "nginx:alpine"
+)
+
+for img in "${IMAGES[@]}"; do
+    FNAME=$(echo "$img" | tr '/:' '__').tar
+    echo "  Pulling $img..."
+    docker pull --platform "$PLATFORM" "$img" 2>/dev/null || docker pull "$img"
+    echo "  Saving $img -> images/$FNAME"
+    docker save "$img" -o "$OUT/images/$FNAME"
 done
 
-# 2) Copy configs
+# ─────────────────────────────────────────────────────────────────
+# Step 2: Build application images
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "[2/5] Copying configuration..."
+echo "[2/7] Building application images..."
+
+# Build backend
+echo "  Building backend image..."
+docker build -t shopintel-backend:latest -f Dockerfile . 2>&1 | tail -3
+docker save shopintel-backend:latest -o "$OUT/images/shopintel-backend.tar"
+echo "  Saved shopintel-backend:latest"
+
+# Build frontend
+echo "  Building frontend image..."
+docker build -t shopintel-frontend:latest -f frontend/Dockerfile frontend/ 2>&1 | tail -3
+docker save shopintel-frontend:latest -o "$OUT/images/shopintel-frontend.tar"
+echo "  Saved shopintel-frontend:latest"
+
+# ─────────────────────────────────────────────────────────────────
+# Step 3: Pre-download LLM model via temporary Ollama container
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "[3/7] Pre-downloading LLM model ($LLM_MODEL)..."
+echo "  This may take 20-60 minutes depending on model size and bandwidth."
+
+OLLAMA_TMP="ollama-bundle-tmp"
+OLLAMA_VOL="ollama-bundle-vol"
+
+# Clean up any previous runs
+docker rm -f "$OLLAMA_TMP" 2>/dev/null || true
+docker volume rm "$OLLAMA_VOL" 2>/dev/null || true
+docker volume create "$OLLAMA_VOL"
+
+# Start temporary Ollama instance
+docker run -d --name "$OLLAMA_TMP" \
+    -v "$OLLAMA_VOL:/root/.ollama" \
+    ollama/ollama:latest
+
+# Wait for Ollama to be ready
+echo "  Waiting for Ollama to start..."
+for i in $(seq 1 30); do
+    if docker exec "$OLLAMA_TMP" curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+        echo "  Ollama is ready."
+        break
+    fi
+    sleep 2
+done
+
+# Pull the model
+echo "  Pulling model $LLM_MODEL (this takes a while)..."
+docker exec "$OLLAMA_TMP" ollama pull "$LLM_MODEL"
+
+# Export the model data volume
+echo "  Exporting model volume..."
+docker run --rm \
+    -v "$OLLAMA_VOL:/source:ro" \
+    -v "$(cd "$OUT" && pwd)/models:/backup" \
+    alpine tar czf /backup/ollama-models.tar.gz -C /source .
+
+# Clean up
+docker rm -f "$OLLAMA_TMP"
+docker volume rm "$OLLAMA_VOL"
+echo "  Model exported to models/ollama-models.tar.gz"
+
+# ─────────────────────────────────────────────────────────────────
+# Step 4: Copy compose files and configuration
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "[4/7] Copying configuration files..."
+
 cp docker-compose.local.yml "$OUT/config/"
-cp .env "$OUT/config/"
+cp docker-compose.dgx-spark.yml "$OUT/config/"
 cp -r config/ "$OUT/config/queryweaver/"
 
-# 3) Copy scripts
-echo ""
-echo "[3/5] Copying scripts..."
-cp scripts/*.sh "$OUT/scripts/"
+# Copy .env.example as template
+cp .env.example "$OUT/config/.env.example"
 
-# 4) Copy data
-echo ""
-echo "[4/5] Copying data..."
-cp -r data/ "$OUT/data/"
-cp -r db/ "$OUT/config/db/"
-[ -f antigravity_shop_intelligence_bundle/inputs/solidcam_graph_simulated_production.xlsx ] && \
-  cp antigravity_shop_intelligence_bundle/inputs/solidcam_graph_simulated_production.xlsx "$OUT/data/"
+# Create a default .env for DGX Spark
+cat > "$OUT/config/.env" <<'ENVFILE'
+# ShopIntel DGX Spark Configuration
+# Generated by build-offline-bundle.sh
 
-# 5) Generate manifest with checksums
+# Postgres
+POSTGRES_PASSWORD=shop_pass_local
+
+# LLM Configuration (70B model for DGX Spark 128GB)
+LLM_MODEL_ID=llama3.1:70b
+LLM_TIMEOUT_MS=300000
+LLM_RETRIES=3
+
+# Offline mode
+OFFLINE_ONLY=true
+ENVFILE
+
+echo "  Configuration files copied."
+
+# ─────────────────────────────────────────────────────────────────
+# Step 5: Copy data, migrations, and scripts
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "[5/5] Generating manifest..."
+echo "[5/7] Copying data, migrations, and scripts..."
+
+# Data
+cp -r data/erp/*.csv "$OUT/data/erp/" 2>/dev/null || echo "  (no CSV files found in data/erp/)"
+cp -r data/ "$OUT/data/" 2>/dev/null || true
+
+# Migrations
+cp db/migrations/*.sql "$OUT/db/migrations/"
+
+# Scripts
+cp scripts/apply-migrations.sh "$OUT/scripts/"
+cp scripts/entrypoint.sh "$OUT/scripts/"
+[ -f scripts/load-postgres-data.sh ] && cp scripts/load-postgres-data.sh "$OUT/scripts/"
+[ -f scripts/acceptance-tests.sh ] && cp scripts/acceptance-tests.sh "$OUT/scripts/"
+
+echo "  Data and scripts copied."
+
+# ─────────────────────────────────────────────────────────────────
+# Step 6: Copy deploy and verify scripts (will be created separately)
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "[6/7] Copying deployment scripts..."
+
+[ -f scripts/deploy-offline.sh ] && cp scripts/deploy-offline.sh "$OUT/scripts/"
+[ -f scripts/verify-dgx-spark-shopintel.sh ] && cp scripts/verify-dgx-spark-shopintel.sh "$OUT/scripts/"
+[ -f scripts/backup.sh ] && cp scripts/backup.sh "$OUT/scripts/"
+[ -f systemd/shopintel.service ] && cp systemd/shopintel.service "$OUT/systemd/"
+
+# Make all scripts executable
+chmod +x "$OUT/scripts/"*.sh 2>/dev/null || true
+
+echo "  Deployment scripts copied."
+
+# ─────────────────────────────────────────────────────────────────
+# Step 7: Generate manifest with checksums
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "[7/7] Generating manifest with SHA-256 checksums..."
+
+export OUT
 python3 - << 'PY'
 import hashlib, json, os
 from pathlib import Path
+from datetime import datetime
 
-out = Path(os.environ.get("OUT", "offline_bundle"))
+out = Path(os.environ.get("OUT", "shopintel-dgx-bundle"))
 entries = []
 for p in sorted(out.rglob("*")):
     if p.is_file():
         h = hashlib.sha256()
         with p.open("rb") as f:
-            for chunk in iter(lambda: f.read(1024*1024), b""):
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
                 h.update(chunk)
         entries.append({
             "path": str(p.relative_to(out)),
@@ -68,7 +220,14 @@ for p in sorted(out.rglob("*")):
             "bytes": p.stat().st_size
         })
 
-manifest = {"version": "1.0.0", "created": __import__("datetime").datetime.utcnow().isoformat(), "files": entries}
+manifest = {
+    "version": "2.0.0",
+    "target": "NVIDIA DGX Spark (ARM64)",
+    "created": datetime.utcnow().isoformat() + "Z",
+    "file_count": len(entries),
+    "total_bytes": sum(e["bytes"] for e in entries),
+    "files": entries
+}
 (out / "manifest" / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
 with open(out / "manifest" / "sha256sum.txt", "w") as f:
@@ -80,9 +239,23 @@ print(f"  {len(entries)} files, {total_mb:.1f} MB total")
 PY
 
 echo ""
-echo "============================================"
+echo "============================================================"
 echo " Bundle ready: $OUT/"
-echo " Ship to DGX Spark and run:"
-echo "   cd $OUT"
-echo "   bash scripts/run-all.sh"
-echo "============================================"
+echo "============================================================"
+echo ""
+echo " Contents:"
+echo "   images/           Docker image tarballs (ARM64)"
+echo "   models/           Ollama model data ($LLM_MODEL)"
+echo "   config/           Compose files, .env, QueryWeaver config"
+echo "   data/             Manufacturing CSV datasets"
+echo "   db/migrations/    SQL migration files"
+echo "   scripts/          Deploy, migrate, verify, backup scripts"
+echo "   systemd/          Systemd service unit"
+echo "   manifest/         SHA-256 checksums for integrity"
+echo ""
+echo " Transfer to DGX Spark:"
+echo "   rsync -avP $OUT/ user@dgx-spark:/opt/shopintel/"
+echo ""
+echo " Deploy on DGX Spark:"
+echo "   cd /opt/shopintel && bash scripts/deploy-offline.sh"
+echo "============================================================"

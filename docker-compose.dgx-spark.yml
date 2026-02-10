@@ -1,0 +1,48 @@
+# =============================================================================
+# DGX Spark Override for docker-compose.local.yml
+# Adds NVIDIA GPU runtime, ARM64 optimizations, and production LLM config.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml -f docker-compose.dgx-spark.yml up -d
+# =============================================================================
+name: shopintel-dgx-spark
+
+services:
+  # ─── Ollama with NVIDIA GPU on DGX Spark ───
+  llm:
+    runtime: nvidia
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ─── Backend: Override LLM settings for 70B model ───
+  backend:
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      POSTGRES_URL: postgresql://shop_user:${POSTGRES_PASSWORD:-shop_pass_local}@postgres:5432/shop?default_transaction_read_only=on
+      FALKORDB_URL: redis://falkordb:6379
+      FALKOR_URL: redis://falkordb:6379
+      GRAPH_NAME: shop
+      OPENAI_BASE_URL: http://llm:11434/v1
+      OPENAI_API_KEY: ollama
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-llama3.1:70b}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-300000}
+      LLM_RETRIES: ${LLM_RETRIES:-3}
+      OFFLINE_ONLY: "true"
+      QUERYWEAVER_CONFIG_PATH: ./config/queryweaver.config.json
+      AUDIT_LOG_DIR: /app/audit
+    volumes:
+      - audit_logs:/app/audit
+      - ./audit:/app/audit-host
+
+  # ─── Frontend: bind audit log dir for host-side backup ───
+  frontend:
+    restart: unless-stopped

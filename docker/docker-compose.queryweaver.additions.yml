@@ -1,5 +1,9 @@
 # Merge this into your existing docker-compose.yml (repo root).
-# Adds Postgres + Flyway. If you already have them, ensure service names/env match.
+# Adds Postgres + migration runner. If you already have them, ensure service names/env match.
+#
+# NOTE: Flyway 10 has known JVM SIGILL crashes on ARM64 (DGX Spark, Apple Silicon).
+# We replaced Flyway with scripts/apply-migrations.sh (pure psql, zero JVM dependency).
+# If you need Flyway on x86, uncomment the flyway service below and use flyway:9.16.0-alpine.
 
 services:
   postgres:
@@ -7,30 +11,46 @@ services:
     environment:
       POSTGRES_DB: shop
       POSTGRES_USER: shop_user
-      POSTGRES_PASSWORD: shop_pass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shop_pass}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shop_user -d shop"]
       interval: 5s
       timeout: 5s
       retries: 30
 
-  flyway:
-    image: flyway/flyway:10-alpine
+  # ARM64-safe migration runner (runs inside the backend or as a one-off container)
+  migrations:
+    image: postgres:16-alpine
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - ./db/migrations:/flyway/sql:ro
-    command: >
-      -url=jdbc:postgresql://postgres:5432/shop
-      -user=shop_user
-      -password=shop_pass
-      -connectRetries=60
-      migrate
+      - ./db/migrations:/migrations:ro
+      - ./scripts/apply-migrations.sh:/apply-migrations.sh:ro
+    environment:
+      POSTGRES_URL: postgresql://shop_user:${POSTGRES_PASSWORD:-shop_pass}@postgres:5432/shop
+      MIGRATIONS_DIR: /migrations
+    entrypoint: ["sh", "-c", "apk add --no-cache bash coreutils && bash /apply-migrations.sh"]
+
+  # --- DEPRECATED: Flyway (x86 only, kept for reference) ---
+  # flyway:
+  #   image: flyway/flyway:9.16.0-alpine
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ./db/migrations:/flyway/sql:ro
+  #   command: >
+  #     -url=jdbc:postgresql://postgres:5432/shop
+  #     -user=shop_user
+  #     -password=shop_pass
+  #     -connectRetries=60
+  #     migrate
 
   # Example: wire env into your existing API service (rename "api" to your service name)
   # api:

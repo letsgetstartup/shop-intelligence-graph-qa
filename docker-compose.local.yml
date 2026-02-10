@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: shop
       POSTGRES_USER: shop_user
-      POSTGRES_PASSWORD: shop_pass_local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shop_pass_local}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -50,15 +50,15 @@ services:
     environment:
       PORT: 8080
       NODE_ENV: production
-      POSTGRES_URL: postgresql://shop_user:shop_pass_local@postgres:5432/shop
+      POSTGRES_URL: postgresql://shop_user:${POSTGRES_PASSWORD:-shop_pass_local}@postgres:5432/shop
       FALKORDB_URL: redis://falkordb:6379
       FALKOR_URL: redis://falkordb:6379
       GRAPH_NAME: shop
       OPENAI_BASE_URL: http://llm:11434/v1
       OPENAI_API_KEY: ollama
-      LLM_MODEL_ID: llama3.2
-      LLM_TIMEOUT_MS: "180000"
-      LLM_RETRIES: "2"
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-llama3.2}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-180000}
+      LLM_RETRIES: ${LLM_RETRIES:-2}
       OFFLINE_ONLY: "true"
       QUERYWEAVER_CONFIG_PATH: ./config/queryweaver.config.json
       AUDIT_LOG_DIR: /app/audit
@@ -66,6 +66,12 @@ services:
       - "127.0.0.1:8090:8080"
     volumes:
       - audit_logs:/app/audit
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   # ─── Frontend: Wizechat UI ───
@@ -77,6 +83,12 @@ services:
       - backend
     ports:
       - "127.0.0.1:3001:80"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   # ─── Local LLM: Ollama (OpenAI-compatible, runs on CPU/Apple Silicon/GPU) ───
@@ -86,29 +98,18 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
-
-  # ─── For DGX Spark with NVIDIA GPU, replace above with NIM: ───
-  # llm-nim:
-  #   image: nvcr.io/nim/meta/llama-3.1-8b-instruct:latest
-  #   runtime: nvidia
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
-  #   ports:
-  #     - "127.0.0.1:8000:8000"
-  #   volumes:
-  #     - nim_cache:/opt/nim/.cache
-  #   environment:
-  #     - NGC_API_KEY=${NVIDIA_API_KEY:-no-key}
 
 volumes:
   pgdata:
   falkordbdata:
   audit_logs:
   ollama_data:
-  # nim_cache:
